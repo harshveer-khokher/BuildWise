@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { assembleCase, listJurisdictions, uploadModel } from "../api";
 import { mergeSynthesizedPlot } from "../lib/geometry";
+import { autoConfirmLowConfidenceRooms } from "../lib/autoConfirm";
 import { FIXTURES } from "../fixtures";
 import PlotSizeInput from "./PlotSizeInput";
 import FileUploadZone from "./FileUploadZone";
@@ -89,7 +90,8 @@ export default function IntakeScreen({ onModelReady }) {
         assumptions: [...(model.assumptions || []), ...unresolvedAssumptions],
       };
       const merged = mergeSynthesizedPlot(withAssumptions, width, length, unit);
-      onModelReady(merged, "Your uploaded drawing", {
+      const confirmed = await autoConfirmLowConfidenceRooms(merged);
+      onModelReady(confirmed, "Your uploaded drawing", {
         resolvedRoles: resolvedRoles || {},
         unresolved: unresolved || [],
       });
@@ -106,7 +108,8 @@ export default function IntakeScreen({ onModelReady }) {
     try {
       const fixture = FIXTURES.find((f) => f.id === fixtureId);
       const model = await uploadModel(fixture.model);
-      onModelReady(model, `Sample drawing — ${fixture.label}`);
+      const confirmed = await autoConfirmLowConfidenceRooms(model);
+      onModelReady(confirmed, `Sample drawing — ${fixture.label}`);
     } catch (err) {
       setSubmitError(String(err.message || err));
     } finally {

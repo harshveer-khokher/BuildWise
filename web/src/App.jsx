@@ -1,25 +1,19 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 import IntakeScreen from "./components/IntakeScreen";
-import ConfirmScreen from "./components/ConfirmScreen";
 import LoadingScreen from "./components/LoadingScreen";
 import ResultsScreen from "./components/ResultsScreen";
 import { runChecks, fetchOverlay, fetchReportMarkdown } from "./api";
 
-const STEPS = ["Upload", "Confirm", "Results"];
-
-function needsConfirmation(model) {
-  return model.floors.some((floor) => floor.rooms.some((room) => room.confidence !== "high"));
-}
+const STEPS = ["Upload", "Results"];
 
 function currentStepIndex(step) {
   if (step === "intake") return 0;
-  if (step === "confirm") return 1;
-  return 2; // loading, results, error all read as "on the way to / at" Results
+  return 1; // loading, results, error all read as "on the way to / at" Results
 }
 
 export default function App() {
-  const [step, setStep] = useState("intake"); // intake | confirm | loading | results | error
+  const [step, setStep] = useState("intake"); // intake | loading | results | error
   const [model, setModel] = useState(null);
   const [caseLabel, setCaseLabel] = useState("");
   const [fileAssembly, setFileAssembly] = useState(null);
@@ -29,15 +23,14 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState(null);
   const [retryToken, setRetryToken] = useState(0);
 
+  // Any room the parser couldn't classify with full confidence is auto-confirmed inside
+  // IntakeScreen (packages/api's /models/confirm, called with no human review — see
+  // lib/autoConfirm.js) before this fires, and disclosed via `model.assumptions` instead of an
+  // interactive confirmation screen. Straight from Upload to Results, no separate step in between.
   function handleModelReady(loadedModel, label, assemblyInfo = null) {
     setModel(loadedModel);
     setCaseLabel(label);
     setFileAssembly(assemblyInfo);
-    setStep(needsConfirmation(loadedModel) ? "confirm" : "loading");
-  }
-
-  function handleConfirmed(confirmedModel) {
-    setModel(confirmedModel);
     setStep("loading");
   }
 
@@ -117,9 +110,6 @@ export default function App() {
 
       <main className="app-main">
         {step === "intake" && <IntakeScreen onModelReady={handleModelReady} />}
-        {step === "confirm" && model && (
-          <ConfirmScreen model={model} onConfirmed={handleConfirmed} onCancel={restart} />
-        )}
         {step === "loading" && <LoadingScreen />}
         {step === "error" && (
           <section className="screen">
