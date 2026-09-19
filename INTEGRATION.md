@@ -110,6 +110,48 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 
 ---
 
+## Stage 2 integration (2026-09-19): first real end-to-end run, two engine bugs found and fixed
+
+Ran `packages/parser/semantics.assemble_case()` -> `packages/rules/engine.run_checks()` against
+both real cases (h01, h02) for the first time with all four tracks merged. This is exactly what
+CLAUDE.md §11 Stage 2 predicts: "Expect breakage; that's the point of doing it now." Two real bugs
+surfaced, both now fixed in `packages/rules/engine.py`, full suite still green (79/79):
+
+1. **`_applies()` treated `plot_area_sqm is None` as "rule doesn't apply" (skip, no Finding) instead
+   of "can't be evaluated" (emit `status=unknown`).** Every individual `_check_*` function already
+   handled `plot_area_sqm is None` correctly and would have emitted a proper `unknown` Finding --
+   but the top-level gate short-circuited before any of them ran, for every plot-size-banded rule
+   in the pack. Fixed by letting the band check through (`return True`) when `plot_area_sqm` is
+   `None`, so the existing per-check `unknown` handling actually executes.
+2. **Every rule in `puda_1996.yaml` gates on `applies_when.authority: GMADA`, and h01/h02 both have
+   `jurisdiction.authority == "UNKNOWN"`** (deliberately left unresolved in their meta.json since
+   no title-block jurisdiction inference was done -- see Stage 0 handoff notes above). This meant
+   the *entire* pack silently evaluated to zero findings for both real cases -- indistinguishable
+   from "clean drawing" in the UI despite nothing having actually been checked, which is the exact
+   false-confidence failure CLAUDE.md §5/§1 rule 6 exists to prevent. Fixed in `evaluate()`: when
+   `jurisdiction.authority == "UNKNOWN"`, emit exactly one explicit
+   `PUDA1996.jurisdiction.unknown` Finding (`status=unknown`, `severity=blocking`,
+   `ambiguity_class=missing_input`, cited to clause 3 -- the pack's own applicability clause --
+   with a remedy telling the user to confirm jurisdiction on the model-confirmation screen) instead
+   of returning an empty list.
+
+**Result after both fixes**, h01 with jurisdiction manually confirmed to GMADA (simulating what the
+confirmation screen is for): 31 findings -- 6 violation, 9 pass, 16 unknown (mostly
+`missing_input` for the absent site/zoning/section sheets, exactly as predicted in the Stage 0
+handoff above). With jurisdiction left as `UNKNOWN` (i.e. exactly what the parser produces from
+these sheets today, unconfirmed): 1 finding, the jurisdiction-unknown blocker, and nothing else --
+which is the honest and correct output, not a bug, given no jurisdiction was actually established.
+
+**Follow-up for whoever builds real jurisdiction routing** (CLAUDE.md §2: "jurisdiction routing is
+step zero"): today `packages/parser` deliberately does not infer `jurisdiction.authority` from
+title-block text alone (see Track A's handoff), so every real case starts at `UNKNOWN` until a
+human confirms it on-screen. `packages/api/checks.py`'s `/models/confirm` endpoint already supports
+correcting arbitrary model fields via its general confirmation flow -- confirm jurisdiction is
+wired through the same path as the room-confidence corrections, or add a dedicated field if it
+isn't already.
+
+---
+
 ## Track A — Parser, Stage 1 report (2026-09-19)
 
 Built `packages/parser/dxf_ingest.py`, `packages/parser/pdf_ingest.py`, `packages/parser/semantics.py`,

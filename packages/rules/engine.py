@@ -83,7 +83,13 @@ def _applies(rule: dict, model: BuildingModel) -> bool:
     band = when.get("plot_area_sqm")
     if band:
         if model.plot_area_sqm is None:
-            return False
+            # Missing plot_area_sqm means we don't know whether this rule's band applies --
+            # that's an unknown, not "doesn't apply". Let it through: every _check_* function
+            # already handles plot_area_sqm is None by emitting a status="unknown" Finding
+            # (CLAUDE.md §5) rather than assuming a band. Returning False here would silently
+            # drop the rule instead, which is worse than "unknown" -- it looks like "0 issues
+            # found" on a real drawing that's actually missing its site/zoning sheet.
+            return True
         lo = band.get("min")
         hi = band.get("max")
         if lo is not None and model.plot_area_sqm < lo:
@@ -762,6 +768,39 @@ def evaluate(model: BuildingModel, pack: dict) -> list[Finding]:
     marked `enforced: false` in the pack are skipped (their numeric fact is still citable in the
     pack/report, but the frozen schema has no field to check them against yet)."""
     findings: list[Finding] = []
+
+    if model.jurisdiction.authority == "UNKNOWN":
+        # Jurisdiction routing is "step zero" (CLAUDE.md §2 glossary) -- every rule in this pack
+        # is authored `applies_when.authority: GMADA`, so _applies() would silently skip all of
+        # them below, leaving an empty findings list. An empty list reads as "0 issues found",
+        # which is indistinguishable from a clean drawing -- exactly the false-confidence outcome
+        # CLAUDE.md §5/§1 rule 6 exists to prevent. Surface it as one explicit finding instead of
+        # nothing, citing this pack's own applicability clause (which is literally the clause
+        # that says which areas/authorities it governs).
+        findings.append(Finding(
+            rule_id="PUDA1996.jurisdiction.unknown",
+            status="unknown",
+            severity="blocking",
+            title="Jurisdiction could not be determined",
+            citation=Citation(
+                doc="puda_building_rules_1996", clause="3", version="1996-06-27",
+                status="seed_unverified",
+            ),
+            observed=model.jurisdiction.authority,
+            required="GMADA, MC_KHARAR, or MC_ZIRAKPUR",
+            geometry_ref=None,
+            compoundable=False,
+            ambiguity_class="missing_input",
+            remedies=[Remedy(
+                kind="zoning_revision_request",
+                description="Confirm the plot's sector/authority (GMADA vs. a municipal-council "
+                             "area) on the model-confirmation screen before relying on any "
+                             "finding below -- every rule in this pack is authored against GMADA "
+                             "jurisdiction and was not evaluated while authority is unknown.",
+            )],
+        ))
+        return findings
+
     for rule in pack["rules"]:
         if not rule.get("enforced", True):
             continue
