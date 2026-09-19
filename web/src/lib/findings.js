@@ -17,6 +17,12 @@ export const STATUS_META = {
   pass: { label: "Pass", dot: "🟢", cssVar: "--pass", softVar: "--pass-soft" },
 };
 
+// The flagship zoned-area containment check (packages/rules/packs/puda_1996.yaml). Almost always
+// `unknown` today (no real zoning-plan sheet exists for any current case) — the estimated
+// buildable-envelope panel (EstimatedEnvelopePanel) is rendered next to this specific finding's
+// accordion row, never merged into or replacing it.
+export const CONTAINMENT_RULE_ID = "PUDA1996.containment.zoned_area";
+
 export const STATUS_ORDER = { violation: 0, ambiguity: 1, unknown: 2, advisory: 3, pass: 4 };
 export const SEVERITY_ORDER = { blocking: 0, major: 1, minor: 2 };
 export const SEVERITY_LABEL = { blocking: "Blocking", major: "Major", minor: "Minor" };

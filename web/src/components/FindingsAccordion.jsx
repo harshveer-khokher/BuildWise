@@ -1,6 +1,13 @@
 import { useState } from "react";
-import { groupByRuleId, groupHeadingTitle, sortGroups, SEVERITY_LABEL } from "../lib/findings";
+import {
+  groupByRuleId,
+  groupHeadingTitle,
+  sortGroups,
+  SEVERITY_LABEL,
+  CONTAINMENT_RULE_ID,
+} from "../lib/findings";
 import { StatusBadge } from "./StatusBadge";
+import EstimatedEnvelopePanel from "./EstimatedEnvelopePanel";
 
 function formatValue(v) {
   return v === null || v === undefined || v === "" ? "—" : String(v);
@@ -149,14 +156,21 @@ function GroupDetail({ group }) {
 /** Findings grouped by rule_id — mirrors packages/report/render.py's render_markdown grouping
  * judgement (see its `_group` / `_heading_title` helpers): several findings sharing one rule_id
  * (e.g. a light/ventilation check run once per room) collapse into a single expandable row with
- * an instance count and table, instead of N near-duplicate rows. */
-export default function FindingsAccordion({ findings }) {
+ * an instance count and table, instead of N near-duplicate rows.
+ *
+ * `estimatedEnvelope` (from the real-upload path's /cases/assemble response; `null`/undefined for
+ * fixtures and whenever plot dimensions weren't entered) is rendered as a distinctly-styled panel
+ * directly below the real zoned-area containment finding's row — never merged into that finding,
+ * never altering its real status. See EstimatedEnvelopePanel. */
+export default function FindingsAccordion({ findings, estimatedEnvelope = null }) {
   const [openId, setOpenId] = useState(null);
   const groups = sortGroups(groupByRuleId(findings));
 
   if (groups.length === 0) {
     return <p className="hint">No findings were returned.</p>;
   }
+
+  const hasContainmentRow = groups.some((group) => group[0].rule_id === CONTAINMENT_RULE_ID);
 
   return (
     <div className="accordion">
@@ -165,6 +179,7 @@ export default function FindingsAccordion({ findings }) {
         const id = `finding-${f0.rule_id}-${idx}`;
         const isOpen = openId === id;
         const title = groupHeadingTitle(group);
+        const isContainmentRow = f0.rule_id === CONTAINMENT_RULE_ID;
         return (
           <div className="accordion-row" key={id}>
             <h4 className="accordion-row__heading">
@@ -199,9 +214,22 @@ export default function FindingsAccordion({ findings }) {
                 <GroupDetail group={group} />
               </div>
             )}
+            {isContainmentRow && estimatedEnvelope && (
+              <div className="accordion-row__adjunct">
+                <EstimatedEnvelopePanel estimatedEnvelope={estimatedEnvelope} />
+              </div>
+            )}
           </div>
         );
       })}
+      {/* Defensive fallback: the containment rule should always be present (it runs
+          unconditionally), but if it's ever missing from this findings list, the estimate is
+          still surfaced rather than silently dropped (CLAUDE.md §1 rule 6). */}
+      {!hasContainmentRow && estimatedEnvelope && (
+        <div className="accordion-row__adjunct accordion-row__adjunct--standalone">
+          <EstimatedEnvelopePanel estimatedEnvelope={estimatedEnvelope} />
+        </div>
+      )}
     </div>
   );
 }

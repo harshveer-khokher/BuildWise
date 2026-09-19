@@ -838,6 +838,96 @@ input[type="file"] {
   padding: 4px 4px 20px 4px;
 }
 
+.accordion-row__adjunct {
+  padding: 0 4px 18px 4px;
+}
+
+.accordion-row__adjunct--standalone {
+  padding: 18px 4px 18px 4px;
+}
+
+/* ---------------------------------------------------------------------------------------- */
+/* Estimated buildable envelope — an advisory estimate, never a verified check. Dashed borders */
+/* and an outlined (not filled) fit-status pill throughout, deliberately unlike the solid-filled */
+/* StatusBadge/status-badge pill used for real, code-verified findings, so the two can never be */
+/* mistaken for each other at a glance.                                                        */
+/* ---------------------------------------------------------------------------------------- */
+
+.envelope-estimate {
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: var(--paper-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.envelope-estimate--unavailable {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.envelope-estimate__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.envelope-estimate__chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.estimate-fit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--badge-color);
+  background: transparent;
+  border: 1.5px dashed var(--badge-color);
+}
+
+.envelope-estimate__reason {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.envelope-estimate__disclosure summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.envelope-estimate__disclosure p {
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .finding-detail {
   display: flex;
   flex-direction: column;

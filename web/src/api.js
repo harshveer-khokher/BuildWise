@@ -73,17 +73,28 @@ export function uploadModel(buildingModel) {
  * FileList) of File objects, all sent under the repeated "files" field with no role declared —
  * the backend infers each file's role from its own content (title block for PDFs, filename for
  * DXF) and reports what it did. `authority` is the selected jurisdiction's authority code (e.g.
- * "GMADA").
+ * "GMADA"). `plotDimensionsM`, if given, is `{ widthM, lengthM }` — both already converted to
+ * metres by the caller (see lib/geometry.js's UNIT_TO_METRES) — sent as the optional
+ * `plot_width_m`/`plot_length_m` form fields so the backend can compute an advisory estimated
+ * buildable envelope alongside assembly.
  *
  * Resolves to `{ model: BuildingModel, resolved_roles: {filename: role}, unresolved: [{filename,
- * reason}, ...] }` — a file in `unresolved` was not used in assembly; the caller is responsible
- * for surfacing that (CLAUDE.md §1 rule 6: unknown, never silently dropped). */
-export function assembleCase(files, authority) {
+ * reason}, ...], estimated_envelope: object | null }` — a file in `unresolved` was not used in
+ * assembly; the caller is responsible for surfacing that (CLAUDE.md §1 rule 6: unknown, never
+ * silently dropped). `estimated_envelope` is `null` when plot dimensions weren't sent, and
+ * otherwise either `{available: false, reason}` or the full estimate — see
+ * packages/rules/estimated_envelope.py. */
+export function assembleCase(files, authority, plotDimensionsM) {
   const form = new FormData();
   for (const file of files) {
     form.append("files", file);
   }
   form.append("authority", authority);
+  if (plotDimensionsM) {
+    const { widthM, lengthM } = plotDimensionsM;
+    if (Number.isFinite(widthM)) form.append("plot_width_m", String(widthM));
+    if (Number.isFinite(lengthM)) form.append("plot_length_m", String(lengthM));
+  }
   return fetch(`${API_BASE}/cases/assemble`, {
     method: "POST",
     body: form,

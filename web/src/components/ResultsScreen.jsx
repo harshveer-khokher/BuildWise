@@ -22,6 +22,11 @@ export default function ResultsScreen({
   const resolvedEntries = fileAssembly ? Object.entries(fileAssembly.resolvedRoles || {}) : [];
   const unresolvedEntries = fileAssembly?.unresolved || [];
   const hasFileOutcomes = resolvedEntries.length > 0 || unresolvedEntries.length > 0;
+  // Only ever present for the real /cases/assemble upload path — absent (undefined) for sample
+  // fixtures, which have no source drawings to measure an envelope from. `?? null` normalizes
+  // "not attempted" (fixture path) the same as "attempted, unavailable" would look distinct via
+  // .available, so FindingsAccordion can tell "nothing to show" from "show the disclosure".
+  const estimatedEnvelope = fileAssembly?.estimatedEnvelope ?? null;
 
   return (
     <section className="screen results">
@@ -70,7 +75,7 @@ export default function ResultsScreen({
           Grouped by rule — a check run once per room or edge appears as one row with an instance
           count, not as repeated rows.
         </p>
-        <FindingsAccordion findings={findings} />
+        <FindingsAccordion findings={findings} estimatedEnvelope={estimatedEnvelope} />
       </div>
 
       {hasFileOutcomes && (

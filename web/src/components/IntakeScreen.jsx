@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { assembleCase, listJurisdictions, uploadModel } from "../api";
-import { mergeSynthesizedPlot } from "../lib/geometry";
+import { mergeSynthesizedPlot, UNIT_TO_METRES } from "../lib/geometry";
 import { autoConfirmLowConfidenceRooms } from "../lib/autoConfirm";
 import { FIXTURES } from "../fixtures";
 import PlotSizeInput from "./PlotSizeInput";
@@ -73,10 +73,17 @@ export default function IntakeScreen({ onModelReady }) {
     setBusy(true);
     setSubmitError(null);
     try {
-      const { model, resolved_roles: resolvedRoles, unresolved } = await assembleCase(
-        files,
-        jurisdiction.authority,
-      );
+      // Same conversion table used for the plot-rectangle fallback (mergeSynthesizedPlot below)
+      // — the backend's estimated-envelope calculation needs metres too, and plotSizeValid above
+      // guarantees width/length are present whenever this real-upload path submits.
+      const factor = UNIT_TO_METRES[unit] ?? 1;
+      const plotDimensionsM = { widthM: widthNum * factor, lengthM: lengthNum * factor };
+      const {
+        model,
+        resolved_roles: resolvedRoles,
+        unresolved,
+        estimated_envelope: estimatedEnvelope,
+      } = await assembleCase(files, jurisdiction.authority, plotDimensionsM);
       // Unresolved files affect what data the check ran against, so they're recorded as
       // assumptions too — that's the one channel guaranteed to reach the exported report as well
       // as the on-screen results (CLAUDE.md §5: assumptions are "printed verbatim on the
@@ -94,6 +101,7 @@ export default function IntakeScreen({ onModelReady }) {
       onModelReady(confirmed, "Your uploaded drawing", {
         resolvedRoles: resolvedRoles || {},
         unresolved: unresolved || [],
+        estimatedEnvelope: estimatedEnvelope ?? null,
       });
     } catch (err) {
       setSubmitError(String(err.message || err));
