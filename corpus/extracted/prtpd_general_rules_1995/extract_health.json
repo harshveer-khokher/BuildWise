@@ -1,0 +1,11 @@
+{
+  "doc_id": "prtpd_general_rules_1995",
+  "doc_type": "reference",
+  "sha256": "055820614e4d399fc27ee8dae7846d7b90738b7baed534ba6869d0e31859dd46",
+  "page_count": 18,
+  "clause_count": 76,
+  "ocr_pages": [],
+  "anomalies": [
+    "numbering gap: clause 22 is followed by clause 24 (expected 23). Either the chunker missed a clause or the source skips a number -- check page [5]."
+  ]
+}

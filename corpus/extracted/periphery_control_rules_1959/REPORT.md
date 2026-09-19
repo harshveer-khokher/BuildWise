@@ -1,0 +1,66 @@
+# Extraction health: periphery_control_rules_1959
+
+- doc_type: `policy`
+- sha256: `161785213f212c6757bda337f4e685198a4dd947e21f271f1a003410533b7faf`
+- pages: 35
+- clauses extracted: 75
+- OCR-required pages: []
+
+## Numbering anomalies
+
+- clause number '1' repeated (occurrence 2) at page 0; disambiguated as '1#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '2' repeated (occurrence 2) at page 5; disambiguated as '2#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '2' repeated (occurrence 3) at page 6; disambiguated as '2#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '2' repeated (occurrence 4) at page 6; disambiguated as '2#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '3' repeated (occurrence 2) at page 6; disambiguated as '3#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '1' repeated (occurrence 3) at page 8; disambiguated as '1#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '2' repeated (occurrence 5) at page 8; disambiguated as '2#5'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '3' repeated (occurrence 3) at page 8; disambiguated as '3#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '4' repeated (occurrence 2) at page 8; disambiguated as '4#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '5' repeated (occurrence 2) at page 8; disambiguated as '5#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '6' repeated (occurrence 2) at page 9; disambiguated as '6#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '10' repeated (occurrence 2) at page 9; disambiguated as '10#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '11' repeated (occurrence 2) at page 9; disambiguated as '11#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '12' repeated (occurrence 2) at page 10; disambiguated as '12#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '13' repeated (occurrence 2) at page 10; disambiguated as '13#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '1' repeated (occurrence 4) at page 11; disambiguated as '1#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '2' repeated (occurrence 6) at page 11; disambiguated as '2#6'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '3' repeated (occurrence 4) at page 11; disambiguated as '3#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '4' repeated (occurrence 3) at page 11; disambiguated as '4#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '5' repeated (occurrence 3) at page 12; disambiguated as '5#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '6' repeated (occurrence 3) at page 12; disambiguated as '6#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '7' repeated (occurrence 2) at page 12; disambiguated as '7#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '8' repeated (occurrence 2) at page 12; disambiguated as '8#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '9' repeated (occurrence 2) at page 12; disambiguated as '9#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '10' repeated (occurrence 3) at page 13; disambiguated as '10#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '11' repeated (occurrence 3) at page 14; disambiguated as '11#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '12' repeated (occurrence 3) at page 14; disambiguated as '12#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '13' repeated (occurrence 3) at page 15; disambiguated as '13#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '14' repeated (occurrence 2) at page 15; disambiguated as '14#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '15' repeated (occurrence 2) at page 15; disambiguated as '15#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '16' repeated (occurrence 2) at page 15; disambiguated as '16#2'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '3' repeated (occurrence 5) at page 19; disambiguated as '3#5'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '3' repeated (occurrence 6) at page 31; disambiguated as '3#6'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '4' repeated (occurrence 4) at page 31; disambiguated as '4#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '5' repeated (occurrence 4) at page 31; disambiguated as '5#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '6' repeated (occurrence 4) at page 32; disambiguated as '6#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '7' repeated (occurrence 3) at page 32; disambiguated as '7#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '8' repeated (occurrence 3) at page 32; disambiguated as '8#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '9' repeated (occurrence 3) at page 32; disambiguated as '9#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '10' repeated (occurrence 4) at page 32; disambiguated as '10#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '11' repeated (occurrence 4) at page 34; disambiguated as '11#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '12' repeated (occurrence 4) at page 34; disambiguated as '12#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '13' repeated (occurrence 4) at page 34; disambiguated as '13#4'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '14' repeated (occurrence 3) at page 34; disambiguated as '14#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- clause number '15' repeated (occurrence 3) at page 34; disambiguated as '15#3'. Source document reuses rule numbers across Parts -- verify against the gazette before treating both as independent rules.
+- numbering gap: clause 3 is followed by clause 10 (expected 4). Either the chunker missed a clause or the source skips a number -- check page [1].
+- numbering gap: clause 9 is followed by clause 17 (expected 10). Either the chunker missed a clause or the source skips a number -- check page [16].
+
+## Rule coverage
+
+- rules referencing this doc: 0
+- clauses with numeric/measurement content: 2
+- **orphan clauses (numeric content, no rule yet -- the to-do list): 2**
+
+- `periphery_control_rules_1959:3#5` (p.19) Short title, commencement and application
+- `periphery_control_rules_1959:15#3` (p.34) Site Coverage

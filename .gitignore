@@ -1,0 +1,29 @@
+# Real drawings carry owner names, plot numbers and architect seals (CLAUDE.md §10.7).
+# Only truth/ and mutation specs are committed; never the raw real drawings.
+packages/cases/real/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node / web
+node_modules/
+web/dist/
+web/build/
+
+# Corpus derived artifacts that are large/regenerable (rasterized pages)
+corpus/extracted/*/pages/
+
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+
+# Scratch
+scratch_*

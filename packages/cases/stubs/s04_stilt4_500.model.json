@@ -1,0 +1,385 @@
+{
+  "source": "dxf",
+  "jurisdiction": {
+    "authority": "GMADA",
+    "sector": "70",
+    "plot_no": "S04",
+    "allotment_date": "2019-04-01",
+    "rule_pack": "puda_building_rules_1996"
+  },
+  "plot_polygon": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      20.0,
+      0.0
+    ],
+    [
+      20.0,
+      25.0
+    ],
+    [
+      0.0,
+      25.0
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ],
+  "plot_area_sqm": 500.0,
+  "zoned_area": [
+    [
+      2.0,
+      4.0
+    ],
+    [
+      18.0,
+      4.0
+    ],
+    [
+      18.0,
+      21.0
+    ],
+    [
+      2.0,
+      21.0
+    ],
+    [
+      2.0,
+      4.0
+    ]
+  ],
+  "edges": [
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0
+        ]
+      ],
+      "faces_road": true,
+      "road_width_m": 12.0,
+      "role": "front"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          25.0
+        ],
+        [
+          20.0,
+          25.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "rear"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          25.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_a"
+    },
+    {
+      "line": [
+        [
+          20.0,
+          0.0
+        ],
+        [
+          20.0,
+          25.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_b"
+    }
+  ],
+  "floors": [
+    {
+      "level": 0,
+      "is_stilt": true,
+      "footprint": [
+        [
+          3.0,
+          5.0
+        ],
+        [
+          17.0,
+          5.0
+        ],
+        [
+          17.0,
+          19.0
+        ],
+        [
+          3.0,
+          19.0
+        ],
+        [
+          3.0,
+          5.0
+        ]
+      ],
+      "height_m": 2.4,
+      "rooms": []
+    },
+    {
+      "level": 1,
+      "is_stilt": false,
+      "footprint": [
+        [
+          3.0,
+          5.0
+        ],
+        [
+          17.0,
+          5.0
+        ],
+        [
+          17.0,
+          19.0
+        ],
+        [
+          3.0,
+          19.0
+        ],
+        [
+          3.0,
+          5.0
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              3.0,
+              5.0
+            ],
+            [
+              17.0,
+              5.0
+            ],
+            [
+              17.0,
+              19.0
+            ],
+            [
+              3.0,
+              19.0
+            ],
+            [
+              3.0,
+              5.0
+            ]
+          ],
+          "use": "other",
+          "floor": 1,
+          "openings_area_sqm": 8.0,
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "level": 2,
+      "is_stilt": false,
+      "footprint": [
+        [
+          3.0,
+          5.0
+        ],
+        [
+          17.0,
+          5.0
+        ],
+        [
+          17.0,
+          19.0
+        ],
+        [
+          3.0,
+          19.0
+        ],
+        [
+          3.0,
+          5.0
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              3.0,
+              5.0
+            ],
+            [
+              17.0,
+              5.0
+            ],
+            [
+              17.0,
+              19.0
+            ],
+            [
+              3.0,
+              19.0
+            ],
+            [
+              3.0,
+              5.0
+            ]
+          ],
+          "use": "other",
+          "floor": 2,
+          "openings_area_sqm": 8.0,
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "level": 3,
+      "is_stilt": false,
+      "footprint": [
+        [
+          3.0,
+          5.0
+        ],
+        [
+          17.0,
+          5.0
+        ],
+        [
+          17.0,
+          19.0
+        ],
+        [
+          3.0,
+          19.0
+        ],
+        [
+          3.0,
+          5.0
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              3.0,
+              5.0
+            ],
+            [
+              17.0,
+              5.0
+            ],
+            [
+              17.0,
+              19.0
+            ],
+            [
+              3.0,
+              19.0
+            ],
+            [
+              3.0,
+              5.0
+            ]
+          ],
+          "use": "other",
+          "floor": 3,
+          "openings_area_sqm": 8.0,
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "level": 4,
+      "is_stilt": false,
+      "footprint": [
+        [
+          3.0,
+          5.0
+        ],
+        [
+          17.0,
+          5.0
+        ],
+        [
+          17.0,
+          19.0
+        ],
+        [
+          3.0,
+          19.0
+        ],
+        [
+          3.0,
+          5.0
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              3.0,
+              5.0
+            ],
+            [
+              17.0,
+              5.0
+            ],
+            [
+              17.0,
+              19.0
+            ],
+            [
+              3.0,
+              19.0
+            ],
+            [
+              3.0,
+              5.0
+            ]
+          ],
+          "use": "other",
+          "floor": 4,
+          "openings_area_sqm": 8.0,
+          "confidence": "high"
+        }
+      ]
+    }
+  ],
+  "projections": [],
+  "courtyards": [],
+  "mumty": null,
+  "parking_bays": [],
+  "boundary_wall_height_m": null,
+  "has_rwh": true,
+  "tree_count": 3,
+  "assumptions": [
+    "Synthetic stilt+4 case on a 500 sqm plot: whether the stilt storey counts toward FAR/height is a genuine definitional ambiguity (CLAUDE.md \u00a78), not resolved here \u2014 the engine should emit ambiguity_class=definitional with both readings, not a silent pass or fail."
+  ]
+}

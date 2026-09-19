@@ -1,0 +1,5 @@
+pydantic>=2
+pymupdf
+pdfplumber
+shapely
+pytest

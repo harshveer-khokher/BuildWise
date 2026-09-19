@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-09-19T11:57:15.273976+00:00",
+  "documents": [
+    {
+      "doc_id": "puda_building_rules_1996",
+      "title": "Punjab Urban Planning and Development Authority (Building) Rules, 1996",
+      "doc_type": "base_rules",
+      "source_filename": "building rules_29268.pdf",
+      "raw_path": "corpus/raw/puda_building_rules_1996.pdf",
+      "sha256": "01c59c12e6136a2d763702f5aaddde1263565b542ff9bee22777e257563e61bc",
+      "fetched_at": "2026-09-19",
+      "version": "1996-06-27",
+      "notification_no": "No G.S.R 48/PA 11/95/S.180/96",
+      "effective_from": "1996-06-27",
+      "effective_to": null,
+      "jurisdiction_scope": "GMADA / PUDA (state-wide unless MC-area byelaws supersede)",
+      "notes": "CLAUDE.md glossary refers to a 'Building Rules 2021'. The corpus supplied to this build contains the 1996 PUDA Building Rules notification instead -- no 2021 consolidated text or intervening amendments were provided. Do not label this rule_pack '2021'; it is seeded from the 1996 text only. Treat the gap between 1996 and the present as a corpus coverage gap (see REPORT.md), not something to infer."
+    },
+    {
+      "doc_id": "prtpd_general_rules_1995",
+      "title": "Punjab Regional and Town Planning and Development (General) Rules, 1995",
+      "doc_type": "reference",
+      "source_filename": "PRTPD_27296.pdf",
+      "raw_path": "corpus/raw/prtpd_general_rules_1995.pdf",
+      "sha256": "055820614e4d399fc27ee8dae7846d7b90738b7baed534ba6869d0e31859dd46",
+      "fetched_at": "2026-09-19",
+      "version": "1995-08-22",
+      "notification_no": "No. GSR.49/PA 11/95 S. 180/95",
+      "effective_from": "1995-08-22",
+      "effective_to": null,
+      "jurisdiction_scope": "GMADA / PUDA (state-wide unless MC-area byelaws supersede)",
+      "notes": "Procedural rules: Board/committee constitution, building completion timelines, appeals and revision procedure. Not a source of numeric setback/coverage/FAR values -- classified reference, not base_rules. May still be cited for procedural findings (e.g. completion-extension deadlines)."
+    },
+    {
+      "doc_id": "periphery_control_rules_1959",
+      "title": "Punjab New Capital (Periphery) Control Rules, 1959",
+      "doc_type": "policy",
+      "source_filename": "PERIPHERY RULES_22105.pdf",
+      "raw_path": "corpus/raw/periphery_control_rules_1959.pdf",
+      "sha256": "161785213f212c6757bda337f4e685198a4dd947e21f271f1a003410533b7faf",
+      "fetched_at": "2026-09-19",
+      "version": "1959-05-04",
+      "notification_no": "No. C-4574-69/III/4440",
+      "effective_from": "1959-05-04",
+      "effective_to": null,
+      "jurisdiction_scope": "GMADA / PUDA (state-wide unless MC-area byelaws supersede)",
+      "notes": "Periphery control is a GIS/location constraint (per CLAUDE.md glossary), not a drawing-geometry check. Feeds gis/layers + gis/lookup.py as an NOC/permission gate, not the rules engine's pass/fail pack. Classified 'policy' as the closest fit in the doc_type table (drives a remedy/NOC route rather than a direct violation check)."
+    },
+    {
+      "doc_id": "papra_rules_1995",
+      "title": "Punjab Apartment and Property Regulation Rules, 1995",
+      "doc_type": "reference",
+      "source_filename": "PAPRA_5012.pdf",
+      "raw_path": "corpus/raw/papra_rules_1995.pdf",
+      "sha256": "dfbe683fb9c2c312ef7d87fc004064db6ff85f0716f15cbb282c29ddd9615911",
+      "fetched_at": "2026-09-19",
+      "version": "1995-11-20",
+      "notification_no": "No. G.S.R. 58/P.A. 14/95/S. 45/95",
+      "effective_from": "1995-11-20",
+      "effective_to": null,
+      "jurisdiction_scope": "GMADA / PUDA (state-wide unless MC-area byelaws supersede)",
+      "notes": "Governs apartment/plot allotment eligibility and promoter disclosure obligations. Not related to building-dimension compliance. Kept as reference in case an allotment-eligibility ambiguity ever needs a citation; never a basis for a violation finding."
+    }
+  ]
+}

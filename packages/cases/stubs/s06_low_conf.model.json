@@ -1,0 +1,242 @@
+{
+  "source": "raster",
+  "jurisdiction": {
+    "authority": "GMADA",
+    "sector": "70",
+    "plot_no": "S06",
+    "allotment_date": "2019-04-01",
+    "rule_pack": "puda_building_rules_1996"
+  },
+  "plot_polygon": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      12.5,
+      0.0
+    ],
+    [
+      12.5,
+      20.0
+    ],
+    [
+      0.0,
+      20.0
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ],
+  "plot_area_sqm": 250.0,
+  "zoned_area": [
+    [
+      1.5,
+      3.0
+    ],
+    [
+      11.0,
+      3.0
+    ],
+    [
+      11.0,
+      17.0
+    ],
+    [
+      1.5,
+      17.0
+    ],
+    [
+      1.5,
+      3.0
+    ]
+  ],
+  "edges": [
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          12.5,
+          0.0
+        ]
+      ],
+      "faces_road": true,
+      "road_width_m": 12.0,
+      "role": "front"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          20.0
+        ],
+        [
+          12.5,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "rear"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_a"
+    },
+    {
+      "line": [
+        [
+          12.5,
+          0.0
+        ],
+        [
+          12.5,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_b"
+    }
+  ],
+  "floors": [
+    {
+      "level": 0,
+      "is_stilt": false,
+      "footprint": [
+        [
+          2.0,
+          3.5
+        ],
+        [
+          10.5,
+          3.5
+        ],
+        [
+          10.5,
+          13.5
+        ],
+        [
+          2.0,
+          13.5
+        ],
+        [
+          2.0,
+          3.5
+        ]
+      ],
+      "height_m": 3.2,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              2.0,
+              3.5
+            ],
+            [
+              6.0,
+              3.5
+            ],
+            [
+              6.0,
+              8.5
+            ],
+            [
+              2.0,
+              8.5
+            ],
+            [
+              2.0,
+              3.5
+            ]
+          ],
+          "use": "store",
+          "floor": 0,
+          "openings_area_sqm": 3.5,
+          "confidence": "low"
+        },
+        {
+          "polygon": [
+            [
+              6.0,
+              3.5
+            ],
+            [
+              10.5,
+              3.5
+            ],
+            [
+              10.5,
+              8.5
+            ],
+            [
+              6.0,
+              8.5
+            ],
+            [
+              6.0,
+              3.5
+            ]
+          ],
+          "use": "bedroom",
+          "floor": 0,
+          "openings_area_sqm": 2.4,
+          "confidence": "low"
+        },
+        {
+          "polygon": [
+            [
+              2.0,
+              8.5
+            ],
+            [
+              10.5,
+              8.5
+            ],
+            [
+              10.5,
+              13.5
+            ],
+            [
+              2.0,
+              13.5
+            ],
+            [
+              2.0,
+              8.5
+            ]
+          ],
+          "use": "other",
+          "floor": 0,
+          "openings_area_sqm": 1.0,
+          "confidence": "medium"
+        }
+      ]
+    }
+  ],
+  "projections": [],
+  "courtyards": [],
+  "mumty": null,
+  "parking_bays": [],
+  "boundary_wall_height_m": null,
+  "has_rwh": true,
+  "tree_count": 1,
+  "assumptions": [
+    "Synthetic low-confidence case: two room-use labels are confidence=low, simulating a raster/scanned source where OCR of the room tag was unreliable. Must route through the model-confirmation screen before any rule runs, per Confidence semantics in \u00a75."
+  ]
+}

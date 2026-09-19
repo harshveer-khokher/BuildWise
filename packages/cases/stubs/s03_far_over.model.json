@@ -1,0 +1,300 @@
+{
+  "source": "dxf",
+  "jurisdiction": {
+    "authority": "GMADA",
+    "sector": "70",
+    "plot_no": "S03",
+    "allotment_date": "2019-04-01",
+    "rule_pack": "puda_building_rules_1996"
+  },
+  "plot_polygon": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      12.5,
+      0.0
+    ],
+    [
+      12.5,
+      20.0
+    ],
+    [
+      0.0,
+      20.0
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ],
+  "plot_area_sqm": 250.0,
+  "zoned_area": [
+    [
+      1.5,
+      3.0
+    ],
+    [
+      11.0,
+      3.0
+    ],
+    [
+      11.0,
+      17.0
+    ],
+    [
+      1.5,
+      17.0
+    ],
+    [
+      1.5,
+      3.0
+    ]
+  ],
+  "edges": [
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          12.5,
+          0.0
+        ]
+      ],
+      "faces_road": true,
+      "road_width_m": 12.0,
+      "role": "front"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          20.0
+        ],
+        [
+          12.5,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "rear"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_a"
+    },
+    {
+      "line": [
+        [
+          12.5,
+          0.0
+        ],
+        [
+          12.5,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_b"
+    }
+  ],
+  "floors": [
+    {
+      "level": 0,
+      "is_stilt": false,
+      "footprint": [
+        [
+          1.7,
+          3.2
+        ],
+        [
+          10.8,
+          3.2
+        ],
+        [
+          10.8,
+          16.8
+        ],
+        [
+          1.7,
+          16.8
+        ],
+        [
+          1.7,
+          3.2
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              1.7,
+              3.2
+            ],
+            [
+              10.8,
+              3.2
+            ],
+            [
+              10.8,
+              16.8
+            ],
+            [
+              1.7,
+              16.8
+            ],
+            [
+              1.7,
+              3.2
+            ]
+          ],
+          "use": "other",
+          "floor": 0,
+          "openings_area_sqm": 5.0,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "level": 1,
+      "is_stilt": false,
+      "footprint": [
+        [
+          1.7,
+          3.2
+        ],
+        [
+          10.8,
+          3.2
+        ],
+        [
+          10.8,
+          16.8
+        ],
+        [
+          1.7,
+          16.8
+        ],
+        [
+          1.7,
+          3.2
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              1.7,
+              3.2
+            ],
+            [
+              10.8,
+              3.2
+            ],
+            [
+              10.8,
+              16.8
+            ],
+            [
+              1.7,
+              16.8
+            ],
+            [
+              1.7,
+              3.2
+            ]
+          ],
+          "use": "other",
+          "floor": 1,
+          "openings_area_sqm": 5.0,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "level": 2,
+      "is_stilt": false,
+      "footprint": [
+        [
+          1.7,
+          3.2
+        ],
+        [
+          10.8,
+          3.2
+        ],
+        [
+          10.8,
+          16.8
+        ],
+        [
+          1.7,
+          16.8
+        ],
+        [
+          1.7,
+          3.2
+        ]
+      ],
+      "height_m": 3.0,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              1.7,
+              3.2
+            ],
+            [
+              10.8,
+              3.2
+            ],
+            [
+              10.8,
+              16.8
+            ],
+            [
+              1.7,
+              16.8
+            ],
+            [
+              1.7,
+              3.2
+            ]
+          ],
+          "use": "other",
+          "floor": 2,
+          "openings_area_sqm": 5.0,
+          "confidence": "medium"
+        }
+      ]
+    }
+  ],
+  "projections": [],
+  "courtyards": [],
+  "mumty": null,
+  "parking_bays": [],
+  "boundary_wall_height_m": null,
+  "has_rwh": true,
+  "tree_count": 1,
+  "assumptions": [
+    "Synthetic FAR violation: 3 floors x ~130 sqm on a 250 sqm plot (FAR ~1.56) intended to exceed the residential-plotted cap once a verified value exists; exercises the compoundable-remedy path regardless of the exact seeded number."
+  ]
+}
