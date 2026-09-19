@@ -1,0 +1,61 @@
+[
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_first_210","verdict":"match","note":"Text: 'For the first 210 square meters 65%'"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_next_210","verdict":"match","note":"Text: 'For the next 210 squares meters 50%'"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_remaining","verdict":"match","note":"Text: 'For the remaining area 40%'"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_group_housing_multistorey","verdict":"match","note":"Text: 'shall not exceed forty percent of the total site area'"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_industrial","verdict":"not_stated","note":"Text defers to zoning plan, no number given; null correctly proposed"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"residential_component_industrial","verdict":"match","note":"Text: 'residential component... shall not exceed five percent'"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_commercial","verdict":"not_stated","note":"Text defers to Architectural Control Sheet/zoning plan, no number; null correctly proposed"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"coverage_public_buildings","verdict":"match","note":"Text: 'shall not exceed forty percent of the total area of the site'"},
+{"clause_id":"puda_building_rules_1996:15#2","proposed_rule_key":"residential_component_public_buildings","verdict":"match","note":"Text: 'residential component... shall not exceed five percent'"},
+
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_educational","verdict":"match","note":"Text: 'Educational buildings: 1.0'"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_other_public","verdict":"match","note":"Text: 'other public buildings: 1.5'"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_residential_upto_225","verdict":"match","note":"Text: 'upto 225 sq.mtr. in area 1.65'"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_residential_225_to_325","verdict":"match","note":"Text: 'above to 225... but not 1.40 exceeding 325'"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_residential_325_to_430","verdict":"match","note":"Text: 'above 325... but not 1.25 exceeding 430'"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_residential_above_430","verdict":"not_stated","note":"Clause explicitly states no text exists for plots above 430 sq.mtr; null correctly proposed"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_group_housing","verdict":"not_stated","note":"Text defers to zoning plan, no number; null correctly proposed"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_commercial","verdict":"not_stated","note":"Text defers to Zoning plan/Architectural Control Sheets, no number; null correctly proposed"},
+{"clause_id":"puda_building_rules_1996:4#2","proposed_rule_key":"far_industrial","verdict":"not_stated","note":"Text defers to zoning plan, no number; null correctly proposed"},
+
+{"clause_id":"puda_building_rules_1996:16","proposed_rule_key":"far_educational_original","verdict":"match","note":"Text: 'Educational buildings 1.0'"},
+{"clause_id":"puda_building_rules_1996:16","proposed_rule_key":"far_other_public_original","verdict":"match","note":"Text: 'other public buildings 1.5'"},
+{"clause_id":"puda_building_rules_1996:16","proposed_rule_key":"far_residential_upto_225_original","verdict":"match","note":"Text: 'upto 225 square meters in area 1.65'"},
+{"clause_id":"puda_building_rules_1996:16","proposed_rule_key":"far_residential_225_to_325_original","verdict":"match","note":"Text: 'above 225... but not exceeding 325... 1.40'"},
+{"clause_id":"puda_building_rules_1996:16","proposed_rule_key":"far_residential_325_to_430_original","verdict":"match","note":"Text: 'above 325... but not exceeding 430... 1.25'"},
+{"clause_id":"puda_building_rules_1996:16","proposed_rule_key":"far_residential_above_430_original","verdict":"match","note":"Text: '(iv) For plots exceeding 430 square metres – 1.00'"},
+
+{"clause_id":"puda_building_rules_1996:17","proposed_rule_key":"front_rear_setback_fraction_of_height","verdict":"match","note":"Text: 'equal to one forth of the height' = 0.25"},
+{"clause_id":"puda_building_rules_1996:17","proposed_rule_key":"front_rear_setback_height_threshold","verdict":"match","note":"Text: 'subject to a height of two meters'"},
+{"clause_id":"puda_building_rules_1996:17","proposed_rule_key":"side_setback_fraction_of_height","verdict":"match","note":"Text: 'equal to one-fifth of the height' = 0.2"},
+{"clause_id":"puda_building_rules_1996:17","proposed_rule_key":"side_setback_min","verdict":"match","note":"Text: 'subject to minimum of 1.5 meters'"},
+
+{"clause_id":"puda_building_rules_1996:18","proposed_rule_key":"balcony_chhajja_cantilever_max_projection","verdict":"match","note":"Text: 'shall not project more than two meters beyond the building line'"},
+{"clause_id":"puda_building_rules_1996:18","proposed_rule_key":"row_house_projection_max_small_site","verdict":"match","note":"Text: 'projection shall not be more than one meter in case the area of the site is less than 250 square meters'"},
+{"clause_id":"puda_building_rules_1996:18","proposed_rule_key":"door_window_projection_max","verdict":"match","note":"Text: 'projection on door and window shall not exceed 0.45 meters'"},
+{"clause_id":"puda_building_rules_1996:18","proposed_rule_key":"projection_min_clear_height_above_plinth","verdict":"match","note":"Text: 'No projection shall be at a lesser height than 2.25 meters clear above the plinth'"},
+{"clause_id":"puda_building_rules_1996:18","proposed_rule_key":"projection_max_width_fraction_of_site_width","verdict":"match","note":"Text: 'width of the projection shall not exceed one forth of the width of the sites' = 0.25"},
+
+{"clause_id":"puda_building_rules_1996:20","proposed_rule_key":"courtyard_min_area","verdict":"match","note":"Text: 'shall not be less that nine square meters'"},
+{"clause_id":"puda_building_rules_1996:20","proposed_rule_key":"courtyard_min_width","verdict":"match","note":"Text: 'minimum width... shall not be less than 2.5 meters'"},
+{"clause_id":"puda_building_rules_1996:20","proposed_rule_key":"courtyard_width_fraction_of_mean_height","verdict":"match","note":"Text: 'shall not be less than half the mean height' = 0.5"},
+
+{"clause_id":"puda_building_rules_1996:22","proposed_rule_key":"habitable_room_min_height","verdict":"match","note":"Text: 'height of a habitable room shall not be less than 2.70 meters'"},
+{"clause_id":"puda_building_rules_1996:22","proposed_rule_key":"wc_bath_store_gallery_verandah_mezzanine_min_mean_height","verdict":"match","note":"Text: 'mean height of a water closet bathrooms, store room, gallery, verandah and mezzanine floor shall not be less than 2.25'"},
+{"clause_id":"puda_building_rules_1996:22","proposed_rule_key":"min_clear_headroom","verdict":"match","note":"Text: 'the clear headroom in any case shall not be less than 2.25 meters'"},
+{"clause_id":"puda_building_rules_1996:22","proposed_rule_key":"habitable_room_open_space_min_width","verdict":"match","note":"Text: 'open space having a minimum width of three meters'"},
+{"clause_id":"puda_building_rules_1996:22","proposed_rule_key":"light_ventilation_min_ratio","verdict":"match","note":"Text: 'shall not be less than one tenth of the floor area' = 0.1"},
+
+{"clause_id":"puda_building_rules_1996:24","proposed_rule_key":"basement_min_height","verdict":"match","note":"Text: 'minimum height of basement shall be 2.50 meters'"},
+{"clause_id":"puda_building_rules_1996:24","proposed_rule_key":"basement_max_coverage_vs_ground_floor","verdict":"not_stated","note":"Text only says basement covered area 'shall not exceed the area on the ground floor' -- a qualitative equality relation, not a stated percentage figure; encoding as '100%' is a derived/computed value, not transcribed text"},
+
+{"clause_id":"puda_building_rules_1996:25","proposed_rule_key":"staircase_min_width_residential","verdict":"match","note":"Text: 'minimum width of 0.70 meters'"},
+{"clause_id":"puda_building_rules_1996:25","proposed_rule_key":"staircase_min_width_commercial_public","verdict":"match","note":"Text: 'minimum clear width of 1.20 meters'"},
+{"clause_id":"puda_building_rules_1996:25","proposed_rule_key":"staircase_max_riser","verdict":"match","note":"Text: 'riser if more than 22 centimeters' (i.e. max 22cm)"},
+{"clause_id":"puda_building_rules_1996:25","proposed_rule_key":"staircase_min_tread","verdict":"match","note":"Text: 'a tread of less than 23 centimeters' (i.e. min 23cm)"},
+{"clause_id":"puda_building_rules_1996:25","proposed_rule_key":"landing_min_width_vs_staircase","verdict":"not_stated","note":"Text only says landing width 'shall not be less than the width of the staircase' -- a qualitative relation, not a stated percentage figure; encoding as '100%' is a derived/computed value, not transcribed text"},
+
+{"clause_id":"puda_building_rules_1996:26","proposed_rule_key":"roof_projection_height_threshold","verdict":"match","note":"Text: 'exceeding 2.25 meters in height'"},
+{"clause_id":"puda_building_rules_1996:26","proposed_rule_key":"roof_projection_min_recede_ratio","verdict":"match","note":"Text: 'receded... by a minimum distance equal to their height above roof level' = ratio 1.0"}
+]

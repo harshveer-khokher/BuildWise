@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ report_title }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #1d2939; margin: 2rem; font-size: 13px; }
+  h1 { font-size: 20px; margin-bottom: 0.1rem; }
+  .subtitle { color: #667085; margin-top: 0; margin-bottom: 1.2rem; }
+  .summary-banner {
+    background: #fff4e5; border: 1px solid #f79009; border-radius: 6px;
+    padding: 0.75rem 1rem; font-weight: bold; margin-bottom: 1.2rem;
+  }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+  th, td { border: 1px solid #d0d5dd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f2f4f7; }
+  .status-violation { color: #d92d20; font-weight: bold; }
+  .status-ambiguity { color: #b54708; font-weight: bold; }
+  .status-unknown { color: #667085; font-weight: bold; }
+  .status-advisory { color: #175cd3; font-weight: bold; }
+  .status-pass { color: #027a48; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; margin-bottom: 1.2rem; }
+  .meta-grid div span.label { color: #667085; }
+  .citation { font-size: 11px; color: #667085; }
+  .assumptions { background: #f9fafb; border: 1px solid #eaecf0; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.2rem; }
+  .assumptions li { margin-bottom: 4px; }
+  footer { margin-top: 2rem; border-top: 2px solid #1d2939; padding-top: 0.75rem; font-size: 11px; color: #475467; }
+  footer p { margin: 4px 0; }
+  .footer-emphasis { font-weight: bold; color: #1d2939; }
+</style>
+</head>
+<body>
+  <h1>{{ report_title }}</h1>
+  <p class="subtitle">Generated {{ generated_at }} &middot; mohali-check pre-submission checker</p>
+
+  <div class="summary-banner">{{ summary_line }}</div>
+
+  <div class="meta-grid">
+    <div><span class="label">Authority:</span> {{ jurisdiction.authority }}</div>
+    <div><span class="label">Rule pack:</span> {{ jurisdiction.rule_pack }}</div>
+    <div><span class="label">Sector / Plot:</span> {{ jurisdiction.sector or "?" }} / {{ jurisdiction.plot_no or "?" }}</div>
+    <div><span class="label">Allotment date:</span> {{ jurisdiction.allotment_date or "unknown" }}</div>
+    <div><span class="label">Plot area:</span> {{ plot_area_sqm }} sq m ({{ plot_area_sqyd }} sq yd)</div>
+    <div><span class="label">Zoned area on file:</span> {{ "yes" if zoned_area_present else "NO — containment check is unknown, not pass" }}</div>
+  </div>
+
+  <h2>Findings ({{ findings|length }})</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Severity</th>
+        <th>Rule</th>
+        <th>Title</th>
+        <th>Observed</th>
+        <th>Required</th>
+        <th>Citation</th>
+        <th>Compoundable</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in findings %}
+      <tr>
+        <td class="status-{{ f.status }}">{{ f.status }}</td>
+        <td>{{ f.severity }}</td>
+        <td>{{ f.rule_id }}</td>
+        <td>
+          {{ f.title }}
+          {% if f.ambiguity_class %}<br><em>ambiguity: {{ f.ambiguity_class }}</em>{% endif %}
+        </td>
+        <td>{{ f.observed if f.observed is not none else "—" }}</td>
+        <td>{{ f.required if f.required is not none else "—" }}</td>
+        <td class="citation">{{ f.citation.doc }} &sect;{{ f.citation.clause }} (v{{ f.citation.version }}, {{ f.citation.status }})</td>
+        <td>{{ "yes" if f.compoundable else "no" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if assumptions %}
+  <div class="assumptions">
+    <strong>Assumptions made during parsing (printed verbatim):</strong>
+    <ul>
+      {% for a in assumptions %}<li>{{ a }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <footer>
+    <p class="footer-emphasis">This is a pre-submission check only. It is not an approval, not a sanction, and not a certificate of compliance by GMADA, PUDA, or any authority.</p>
+    <p>Numeric rule values are seeded from source clauses and carry their own verification status per finding (verified / seed_unverified / conflict / not_stated) &mdash; see the citation column. Values not marked "verified" have not been diffed against the gazette and must be independently confirmed before submission.</p>
+    <p>1 sq m = 1.196 sq yd. All internal computation is in metres/square metres; sq yd figures shown here are for display only.</p>
+  </footer>
+</body>
+</html>

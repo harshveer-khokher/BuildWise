@@ -3,3 +3,10 @@ pymupdf
 pdfplumber
 shapely
 pytest
+ezdxf
+fastapi
+uvicorn
+python-multipart
+jinja2
+reportlab
+httpx

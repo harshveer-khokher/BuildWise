@@ -26,22 +26,10 @@
 
 ## Rule coverage
 
-- rules referencing this doc: 0
+- rules referencing this doc: 12
 - clauses with numeric/measurement content: 15
-- **orphan clauses (numeric content, no rule yet -- the to-do list): 15**
+- **orphan clauses (numeric content, no rule yet -- the to-do list): 3**
 
-- `puda_building_rules_1996:3` (p.0) Short title, commencement and application
-- `puda_building_rules_1996:15` (p.4) Site Coverage
-- `puda_building_rules_1996:16` (p.4) Floor Area Ratio
-- `puda_building_rules_1996:17` (p.5) Height of building and set back
-- `puda_building_rules_1996:18` (p.5) Projection
-- `puda_building_rules_1996:20` (p.5) Minimum Area of Courtyard
-- `puda_building_rules_1996:22` (p.6) Minimum height of room, verandah and light ventilation
-- `puda_building_rules_1996:24` (p.6) Basement
-- `puda_building_rules_1996:25` (p.6) Stair case
-- `puda_building_rules_1996:26` (p.6) Set back of projected portion of roof level
 - `puda_building_rules_1996:43` (p.8) Manholes
 - `puda_building_rules_1996:45` (p.9) Absorption pits
-- `puda_building_rules_1996:15#2` (p.22) Site coverage
-- `puda_building_rules_1996:4#2` (p.22) In the said Rules, for Rule 16 , the following shall be substituted , namely
 - `puda_building_rules_1996:2#5` (p.24) In the Punjab Urban Planning and Development Authority, (Building) Rules 1996, in

@@ -1,0 +1,500 @@
+# PUDA Building Rules, 1996 -- rule pack
+#
+# CLAUDE.md's glossary names "Building Rules 2021", but the only base-rules PDF supplied to
+# this build is the Punjab Urban Planning and Development Authority (Building) Rules, 1996
+# (corpus/raw/puda_building_rules_1996.pdf, doc_id puda_building_rules_1996). See
+# INTEGRATION.md "Stage 0 handoff" for the full explanation. Do not treat this pack as current
+# without checking corpus/MANIFEST.json for a later doc_id first.
+#
+# Provenance discipline (CLAUDE.md §1 rule 6, §6.5): every rule below carries a `status` that
+# came out of a real two-pass transcribe+verify run, not hand-typed belief:
+#   - transcription pass  -> corpus/extracted/puda_building_rules_1996/rule_synthesis/transcribe_pass1.json
+#   - verification pass   -> corpus/extracted/puda_building_rules_1996/rule_synthesis/verify_pass1.json
+# Both were produced by fresh Claude subagent calls per CLAUDE.md §6.4/§6.5 -- the verifier saw
+# only the proposed value + raw clause text, never the transcriber's reasoning. Verdict mapping:
+#   match -> verified | mismatch -> conflict (disabled, both values kept) | not_stated -> seed_unverified
+# This run produced zero `conflict` rules (clean source text) but the verifier DID downgrade two
+# transcriber proposals from "stated" to seed_unverified/not_stated (basement-vs-ground-floor
+# coverage relation, landing-vs-staircase width relation) because the clause states a *relation*,
+# not a bare number -- exactly the kind of catch this two-pass discipline exists for.
+#
+# Amendment precedence (CLAUDE.md §6.8): this single PDF contains later notification text that
+# amends its own earlier rules.
+#   - Rule 16 (Floor Area Ratio) is substituted by clause 4#2 (p.22). The amended text DROPS the
+#     original band (iv) "plots exceeding 430 sq.mtr -> FAR 1.00" -- it simply is not restated.
+#     We apply the amended clause per precedence (latest instrument wins) but do NOT silently
+#     invent a replacement value for the dropped band. See far.above_430_gap below: this is
+#     modelled as a genuine instrument_conflict-shaped ambiguity, not a pass, not a silent 1.00.
+#   - Rule 15 (Site Coverage) is substituted by clause 15#2 (p.22). The residential-plotted bands
+#     are numerically unchanged from the original (65/50/40); only the Group Housing figure
+#     changed (50%->40%), which is out of this pack's residential-plotted scope.
+#
+# Schema-gap assumption (append-only note also in INTEGRATION.md): packages/schema/building_model.py
+# (frozen) has no field for a plot's overall use class (residential_plotted / commercial /
+# industrial / public / group_housing). Every `applies_when.use` below is therefore matched by
+# packages/rules/engine.py as "always true" -- every BuildingModel is assumed residential_plotted
+# until that field exists. This is an explicit, printed assumption, not a silent one.
+#
+# `enforced: true` means packages/rules/engine.py actually evaluates this rule against a
+# BuildingModel today. `enforced: false` means the numeric fact is verified/seed_unverified and
+# citable, but no field in the frozen schema currently carries the geometry needed to check it
+# (e.g. door/window projection width, staircase riser/tread, landing width) -- these are listed
+# so tools/coverage.py does not report the source clause as an orphan, and so Track A/D know
+# what schema fields would unlock them. See INTEGRATION.md for the specific asks.
+
+pack_id: puda_1996
+title: "Punjab Urban Planning and Development Authority (Building) Rules, 1996"
+jurisdiction: GMADA
+doc_id: puda_building_rules_1996
+
+rules:
+
+  # --- 1. Zoned-area containment (the flagship, CLAUDE.md §7 priority 1) ---------------------
+  - id: PUDA1996.containment.zoned_area
+    title: Building footprint must sit inside the zoned area
+    kind: containment
+    source: {doc: puda_building_rules_1996, clause: "3", version: "1996-06-27", url: null}
+    status: seed_unverified
+    note: >
+      Not a numeric transcription -- this is the structural application of the "zoning plan"
+      definition in clause 3 plus the glossary rule that the zoning plan overrides generic
+      setbacks. There is no bare number to run through the two-pass numeric verifier, so this
+      stays seed_unverified rather than being marked verified by default.
+    applies_when: {authority: GMADA, use: residential_plotted}
+    check: "footprint.within(zoned_area)"
+    severity: blocking
+    compoundable: false
+    remedies: [geometric_edit, zoning_revision_request]
+    enforced: true
+
+  # --- 2. Ground / site coverage (CLAUDE.md §7 priority 2) -----------------------------------
+  - id: PUDA1996.site_coverage.slab
+    title: Maximum ground coverage (slab bands by site area)
+    kind: site_coverage_slab
+    source: {doc: puda_building_rules_1996, clause: "15#2", version: "1996-06-27 (amended, see notes)", url: null}
+    superseded_source: {doc: puda_building_rules_1996, clause: "15", version: "1996-06-27 (original)", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    table:
+      - {band_sqm: 210, pct: 65}   # first 210 sqm
+      - {band_sqm: 210, pct: 50}   # next 210 sqm
+      - {band_sqm: null, pct: 40} # remaining area
+    check: "ground_coverage_sqm <= slab_cap_sqm(plot_area_sqm, table)"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, purchase_chargeable_far]
+    enforced: true
+
+  # --- 3-6. Floor Area Ratio (CLAUDE.md §7 priority 3) ---------------------------------------
+  - id: PUDA1996.far.upto_225
+    title: Maximum FAR -- residential plotted, plots up to 225 sqm
+    kind: far_band
+    source: {doc: puda_building_rules_1996, clause: "4#2", version: "1996-06-27 notification amending Rule 16 (dated 17.12.1998)", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted, plot_area_sqm: {min: 0, max: 225}}
+    check: "far <= 1.65"
+    max_far: 1.65
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, purchase_chargeable_far, compounding]
+    enforced: true
+
+  - id: PUDA1996.far.225_325
+    title: Maximum FAR -- residential plotted, plots above 225 up to 325 sqm
+    kind: far_band
+    source: {doc: puda_building_rules_1996, clause: "4#2", version: "1996-06-27 notification amending Rule 16 (dated 17.12.1998)", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted, plot_area_sqm: {min: 225, max: 325}}
+    check: "far <= 1.40"
+    max_far: 1.40
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, purchase_chargeable_far, compounding]
+    enforced: true
+
+  - id: PUDA1996.far.325_430
+    title: Maximum FAR -- residential plotted, plots above 325 up to 430 sqm
+    kind: far_band
+    source: {doc: puda_building_rules_1996, clause: "4#2", version: "1996-06-27 notification amending Rule 16 (dated 17.12.1998)", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted, plot_area_sqm: {min: 325, max: 430}}
+    check: "far <= 1.25"
+    max_far: 1.25
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, purchase_chargeable_far, compounding]
+    enforced: true
+
+  - id: PUDA1996.far.above_430_gap
+    title: "FAR cap for plots above 430 sqm: amendment dropped this band (instrument gap)"
+    kind: far_band_gap
+    source: {doc: puda_building_rules_1996, clause: "4#2", version: "1996-06-27 notification amending Rule 16 (dated 17.12.1998)", url: null}
+    superseded_source: {doc: puda_building_rules_1996, clause: "16", version: "1996-06-27 (original)", url: null}
+    status: not_stated
+    value: null
+    superseded_value: 1.00
+    note: >
+      Original Rule 16(c)(iv) capped FAR at 1.00 for plots exceeding 430 sqm. The 1998
+      amendment (clause 4#2) substitutes the WHOLE of Rule 16 and does not restate this band --
+      both transcription and verification passes independently confirmed the amended text is
+      silent here (see rule_synthesis/*.json). Per CLAUDE.md §6.8 rule 1, we do not silently
+      keep applying the superseded 1.00 value nor silently skip the check: plots in this band
+      get an explicit instrument_conflict-shaped finding carrying both the (superseded) old
+      value and the fact that the current instrument states nothing.
+    applies_when: {authority: GMADA, use: residential_plotted, plot_area_sqm: {min: 430, max: null}}
+    check: "no FAR cap stated in currently-applicable amended text"
+    severity: major
+    compoundable: false
+    remedies: [zoning_revision_request]
+    enforced: true
+
+  - id: PUDA1996.far.stilt_treatment
+    title: Whether a stilt storey's footprint counts toward FAR is not addressed by the corpus
+    kind: stilt_far_definitional
+    source: {doc: puda_building_rules_1996, clause: "3", version: "1996-06-27", url: null}
+    status: seed_unverified
+    note: >
+      Clause 3's definition of "floor area ratio" ("...total covered area of all floors,
+      EXCLUDING the area of basement storey, by the area of plot...") explicitly excludes
+      basements but says nothing about a stilt storey -- CLAUDE.md §8's `definitional` ambiguity
+      class exactly. Engine emits both readings (stilt included / excluded) rather than picking
+      one silently. This is a placeholder for Track C's ambiguity dossier (CLAUDE.md §8) --
+      the engine only detects the trigger and reports both numbers; it does not adjudicate.
+    applies_when: {authority: GMADA, use: residential_plotted}
+    check: "far computed excluding stilt vs including stilt -- both reported, neither asserted"
+    severity: minor
+    compoundable: false
+    remedies: []
+    enforced: true
+
+  # --- 7-8. Setbacks (CLAUDE.md §7 priority 4) -----------------------------------------------
+  - id: PUDA1996.setback.front_rear_formula
+    title: Front/rear setback must be at least one-fourth of building height (min 2 m)
+    kind: setback_formula
+    source: {doc: puda_building_rules_1996, clause: "17", version: "1996-06-27", url: null}
+    status: verified
+    note: >
+      The clause text reads "...equal to one forth of the height of the building subject to a
+      height of two meters..." -- the two-pass pipeline verified the numbers 0.25 (fraction) and
+      2 (metres) are both stated, but the CONNECTIVE logic between them ("subject to") is
+      ambiguous prose. We interpret it the same way as the parallel, unambiguous side-setback
+      sentence ("...one-fifth...subject to MINIMUM of 1.5 meters") -- i.e. required = max(height
+      / 4, 2.0). This is a code-level interpretation choice, not a transcribed number, and is
+      flagged here for anyone diffing against the gazette.
+    applies_when: {authority: GMADA, use: residential_plotted}
+    fraction_of_height: 0.25
+    min_m: 2.0
+    check: "setback_m >= max(height_m * 0.25, 2.0)"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: true
+
+  - id: PUDA1996.setback.side_formula
+    title: Side setback must be at least one-fifth of building height (min 1.5 m)
+    kind: setback_formula
+    source: {doc: puda_building_rules_1996, clause: "17", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    fraction_of_height: 0.2
+    min_m: 1.5
+    check: "setback_m >= max(height_m * 0.2, 1.5)"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: true
+
+  - id: PUDA1996.height.max_vs_road_setback
+    title: Building height must not exceed abutting road width plus setback width
+    kind: height_vs_road
+    source: {doc: puda_building_rules_1996, clause: "17", version: "1996-06-27", url: null}
+    status: seed_unverified
+    note: >
+      Pure relational paraphrase of clause 17(1) ("maximum height...shall not exceed the width
+      of abutting road or street plus the width of the set back") -- no bare numeric constant to
+      run through the two-pass verifier, so kept seed_unverified per this pack's policy of only
+      marking `verified` where a transcribed number was independently confirmed.
+    applies_when: {authority: GMADA, use: residential_plotted}
+    check: "total_height_m <= road_width_m + front_setback_m"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: true
+
+  # --- 9-11. Projections (CLAUDE.md §7 priority 6) -------------------------------------------
+  - id: PUDA1996.projection.chajja_balcony_max
+    title: Chajja/balcony/cantilever projection must not exceed 2 m beyond the building line
+    kind: projection_max
+    source: {doc: puda_building_rules_1996, clause: "18", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    max_m: 2.0
+    check: "projection_depth_m <= 2.0"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: true
+
+  - id: PUDA1996.projection.row_house_small_site_max
+    title: Projection on row houses / adjoining buildings capped at 1 m when site area < 250 sqm
+    kind: projection_max
+    source: {doc: puda_building_rules_1996, clause: "18", version: "1996-06-27", url: null}
+    status: verified
+    note: >
+      Schema has no "row house / adjoining building" flag, so engine applies this whenever
+      plot_area_sqm < 250 regardless of adjacency -- a conservative widening of the clause's
+      actual trigger condition, printed as an assumption on any finding it produces.
+    applies_when: {authority: GMADA, use: residential_plotted, plot_area_sqm: {min: 0, max: 250}}
+    max_m: 1.0
+    check: "projection_depth_m <= 1.0"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: true
+
+  - id: PUDA1996.projection.door_window_max
+    title: Door/window projection must not exceed 0.45 m
+    kind: projection_max
+    source: {doc: puda_building_rules_1996, clause: "18", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    max_m: 0.45
+    check: "door_window_projection_m <= 0.45"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # BuildingModel.projections has no door/window sub-type field
+
+  - id: PUDA1996.projection.min_clear_height_above_plinth
+    title: Projection must clear at least 2.25 m above plinth level
+    kind: projection_min_height
+    source: {doc: puda_building_rules_1996, clause: "18", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 2.25
+    check: "projection_clear_height_above_plinth_m >= 2.25"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # projections dict has no height-above-plinth field populated by any parser yet
+
+  - id: PUDA1996.projection.max_width_vs_site_width
+    title: Projection width must not exceed one-fourth of the site width
+    kind: projection_width_fraction
+    source: {doc: puda_building_rules_1996, clause: "18", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    fraction: 0.25
+    check: "projection_width_m <= 0.25 * site_width_m"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  # --- 12-14. Courtyard (CLAUDE.md §7 priority 11) -------------------------------------------
+  - id: PUDA1996.courtyard.min_area
+    title: Closed courtyard onto which habitable rooms abut must be at least 9 sqm
+    kind: courtyard_min_area
+    source: {doc: puda_building_rules_1996, clause: "20", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_sqm: 9
+    check: "courtyard_area_sqm >= 9"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: PUDA1996.courtyard.min_width
+    title: Closed courtyard minimum width in any direction must be at least 2.5 m
+    kind: courtyard_min_width
+    source: {doc: puda_building_rules_1996, clause: "20", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 2.5
+    check: "courtyard_min_width_m >= 2.5"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: PUDA1996.courtyard.width_vs_mean_height
+    title: Courtyard width must be at least half the mean height of the abutting building
+    kind: courtyard_width_fraction
+    source: {doc: puda_building_rules_1996, clause: "20", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    fraction: 0.5
+    check: "courtyard_min_width_m >= 0.5 * abutting_mean_height_m"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # no per-wall "abutting mean height" field on Courtyard geometry (plain Ring)
+
+  # --- 15-17. Room height / light & ventilation (CLAUDE.md §7 priorities 8-9) ----------------
+  - id: PUDA1996.room.habitable_min_height
+    title: Habitable rooms must be at least 2.70 m high
+    kind: room_min_height
+    source: {doc: puda_building_rules_1996, clause: "22", version: "1996-06-27", url: null}
+    status: verified
+    note: "Room has no per-room height field; engine uses the room's Floor.height_m as proxy."
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 2.70
+    room_uses: [bedroom, living, kitchen]
+    check: "floor.height_m >= 2.70  (for floors containing a habitable room)"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: PUDA1996.room.service_min_mean_height
+    title: WC / bathroom / store / stair mean height must be at least 2.25 m
+    kind: room_min_height
+    source: {doc: puda_building_rules_1996, clause: "22", version: "1996-06-27", url: null}
+    status: verified
+    note: "Room has no per-room height field; engine uses the room's Floor.height_m as proxy."
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 2.25
+    room_uses: [bath, wc, store, stair]
+    check: "floor.height_m >= 2.25  (for floors containing a WC/bath/store/stair room)"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: PUDA1996.room.open_space_min_width
+    title: Habitable room must open onto space at least 3 m wide
+    kind: room_open_space
+    source: {doc: puda_building_rules_1996, clause: "22", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 3.0
+    check: "adjoining_open_space_width_m >= 3.0"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # would need per-room exterior-facing-edge geometry not in the frozen schema
+
+  - id: PUDA1996.room.light_ventilation_ratio
+    title: Aggregate openable area must be at least one-tenth of room floor area
+    kind: light_ventilation_ratio
+    source: {doc: puda_building_rules_1996, clause: "22", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_ratio: 0.10
+    check: "room.openings_area_sqm / room_area_sqm >= 0.10"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  # --- 18-19. Basement (CLAUDE.md §7 priority 7) ----------------------------------------------
+  - id: PUDA1996.basement.min_height
+    title: Basement clear height must be at least 2.50 m
+    kind: floor_min_height
+    source: {doc: puda_building_rules_1996, clause: "24", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 2.50
+    check: "basement_floor.height_m >= 2.50"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: PUDA1996.basement.coverage_not_exceeding_ground_floor
+    title: Basement covered area must not exceed the ground floor's covered area
+    kind: area_relation
+    source: {doc: puda_building_rules_1996, clause: "24", version: "1996-06-27", url: null}
+    status: seed_unverified
+    note: >
+      Verifier correctly downgraded this from the transcriber's "100%" framing: the clause
+      states a RELATION ("shall not exceed the area on the ground floor"), not a bare number.
+      Engine checks the relation directly via shapely areas -- no numeric constant is used.
+    applies_when: {authority: GMADA, use: residential_plotted}
+    check: "area(basement.footprint) <= area(ground_floor.footprint)"
+    severity: major
+    compoundable: false
+    remedies: [geometric_edit]
+    enforced: true
+
+  # --- 20. Staircase (CLAUDE.md §7 priority 10) -----------------------------------------------
+  - id: PUDA1996.staircase.min_width_residential
+    title: Residential staircase (single/two-family, >1 storey) must be at least 0.70 m wide
+    kind: staircase_min_width
+    source: {doc: puda_building_rules_1996, clause: "25", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_m: 0.70
+    check: "min_rotated_rect_short_side(stair_room.polygon) >= 0.70"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: PUDA1996.staircase.min_width_commercial_public
+    title: Commercial/public building staircase must be at least 1.20 m clear width
+    kind: staircase_min_width
+    source: {doc: puda_building_rules_1996, clause: "25", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: commercial_or_public}
+    min_m: 1.20
+    check: "min_rotated_rect_short_side(stair_room.polygon) >= 1.20"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # schema has no building-use classification distinguishing commercial/public plots
+
+  - id: PUDA1996.staircase.max_riser
+    title: Staircase riser must not exceed 22 cm
+    kind: staircase_riser
+    source: {doc: puda_building_rules_1996, clause: "25", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    max_cm: 22
+    check: "riser_cm <= 22"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # no riser/tread geometry captured anywhere in the frozen schema
+
+  - id: PUDA1996.staircase.min_tread
+    title: Staircase tread must be at least 23 cm
+    kind: staircase_tread
+    source: {doc: puda_building_rules_1996, clause: "25", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    min_cm: 23
+    check: "tread_cm >= 23"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false
+
+  - id: PUDA1996.staircase.landing_width_vs_flight
+    title: Landing width must not be less than the staircase width
+    kind: area_relation
+    source: {doc: puda_building_rules_1996, clause: "25", version: "1996-06-27", url: null}
+    status: seed_unverified
+    note: "Verifier downgraded the transcriber's '100%' framing -- this is a relation, not a bare number."
+    applies_when: {authority: GMADA, use: residential_plotted}
+    check: "landing_width_m >= staircase_width_m"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false   # no landing geometry in the frozen schema
+
+  # --- 21. Roof-level projections (CLAUDE.md §7, clause 26) -----------------------------------
+  - id: PUDA1996.roof_projection.recede
+    title: Roof-level structures over 2.25 m must recede from the facade by at least their own height
+    kind: roof_projection_recede
+    source: {doc: puda_building_rules_1996, clause: "26", version: "1996-06-27", url: null}
+    status: verified
+    applies_when: {authority: GMADA, use: residential_plotted}
+    height_threshold_m: 2.25
+    recede_ratio: 1.0
+    check: "mumty.setback_m >= mumty.height_m  (only when mumty.height_m > 2.25)"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true   # evaluates when BuildingModel.mumty carries height_m/setback_m; else unknown

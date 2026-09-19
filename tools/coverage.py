@@ -31,16 +31,28 @@ def load_clauses(doc_id: str) -> list[dict]:
 
 
 def load_rule_clause_ids() -> set[str]:
-    """Best-effort: scan pack YAML text for `clause:` values without requiring pyyaml, since
-    tracks other than B may run this before pyyaml is on their machine."""
+    """Best-effort: scan pack YAML text for `{doc: ..., clause: ...}` pairs without requiring
+    pyyaml, since tracks other than B may run this before pyyaml is on their machine.
+
+    A rule's numeric fact can be cited from more than one key in a rule entry -- `source` (the
+    citation the engine actually applies) and, where an amendment superseded an earlier clause,
+    `superseded_source` (CLAUDE.md §6.8 rule 1: the loser is never silently discarded, so it's
+    still "referenced" and should not show up as an orphan). Both are one-line flow-mappings in
+    this pack's style (`source: {doc: X, clause: "Y", ...}`), so a clause_id is built by pairing
+    the `doc:` and `clause:` values found on the SAME line, matching clauses.jsonl's
+    `"<doc_id>:<number>"` format -- a bare clause number without its doc_id would never match
+    anything in clauses.jsonl and silently under-count coverage.
+    """
     clause_ids = set()
     if not PACKS_DIR.exists():
         return clause_ids
+    pair_re = re.compile(r'doc:\s*"?([\w.-]+)"?.*?clause:\s*"?([\w:.#-]+)"?')
     for pack_path in PACKS_DIR.glob("*.yaml"):
         for line in pack_path.read_text(encoding="utf-8").splitlines():
-            m = re.search(r'clause:\s*"?([\w:.#-]+)"?', line)
+            m = pair_re.search(line)
             if m:
-                clause_ids.add(m.group(1))
+                doc_id, clause_number = m.group(1), m.group(2)
+                clause_ids.add(f"{doc_id}:{clause_number}")
     return clause_ids
 
 

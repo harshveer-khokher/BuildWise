@@ -107,3 +107,653 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 ---
 
 *(Append new entries below this line as Stage 1 proceeds.)*
+
+---
+
+## Track A — Parser, Stage 1 report (2026-09-19)
+
+Built `packages/parser/dxf_ingest.py`, `packages/parser/pdf_ingest.py`, `packages/parser/semantics.py`,
+`packages/cases/gen_synth_smoke.py` (+ `packages/cases/synth/s_smoke.dxf`), and
+`packages/cases/mutate.py` (+ two demonstration mutations under `packages/cases/synth/mutated/`
+and `packages/cases/truth/s_smoke_m01.truth.json` / `s_smoke_m02.truth.json`). Tests in
+`tests/test_parser.py` (26 tests, all passing together with `tests/test_stubs.py`). Added `ezdxf`
+to `requirements.txt`.
+
+### The actual BuildingModel shape produced for h01/h02
+
+`packages/parser/semantics.py::assemble_case()` runs end-to-end against both real cases without
+crashing and produces a schema-valid `BuildingModel` in both cases. Concretely, for h01 (and
+h02, same shape):
+
+- `source = "vector_pdf"`.
+- `jurisdiction.authority = "UNKNOWN"` (taken straight from meta.json — jurisdiction routing is
+  rules-engine territory, not parser territory, per CLAUDE.md); `plot_no`/`sector` ARE recovered
+  from each sheet's own title-block text (h01: plot_no="351", sector="Phase-2"; h02:
+  plot_no="1002"). `rule_pack` defaults to `"puda_building_rules_1996"` (matching Track B's
+  renamed pack id from the Stage-0 handoff above, not the "puda_2021" name in CLAUDE.md's
+  glossary).
+- `plot_polygon = None`, `zoned_area = None`, `plot_area_sqm = None`, `edges = []` — no
+  site/zoning sheet exists for either case, so these are correctly left unset rather than
+  guessed (verified by `test_assemble_case_h01_produces_valid_building_model_with_known_gaps`).
+- `floors`: one per plan sheet, `level` 0/1/2 for ground/first/second, `is_stilt=False`,
+  **`height_m = None` for every floor** (no section sheet; elevations are cross-check only, never
+  used to set height — this is the one rule in this module I'd flag as the most
+  important-not-to-regress).
+- Each floor's `footprint` is a **rectangle** (the vector-drawing bounding box, minus an excluded
+  title-block strip) in a **sheet-local metre coordinate system** — NOT anchored to the plot, and
+  not necessarily sharing an origin with any other floor's sheet beyond "both start near (0,0)".
+  This is a deliberate approximation (documented at length in `pdf_ingest.py`'s module
+  docstring): there is no wall-polygon tracing, no shared plot datum, and no scale bar on these
+  sheets — scale is estimated per-sheet by matching the largest clean `N'-M"` dimension string in
+  the sheet's own text layer to the longer axis of its drawing bbox.
+- `rooms`: recovered from this office's own `"ROOM NAME"` + `"W' x H\""` label convention, positioned
+  at the label's text location, sized from the parsed dimension when it parses cleanly (several
+  do: e.g. h01 ground `PARKING HALL 38'-6" x 19'-6"`) else a placeholder size keyed by room-use
+  category. Every room's `confidence` is `"low"` or `"medium"`, never `"high"`. `openings_area_sqm`
+  is always `0.0` for PDF-derived rooms — not extracted at all in this build; light/ventilation
+  checks against these rooms will be meaningless until that's implemented.
+- `assumptions` (16–20 entries for h01/h02) is where every one of the above approximations is
+  spelled out verbatim, plus two things worth Track B/C/D knowing about specifically:
+  1. **A genuine sheet-role mismatch was caught in h02's own meta.json**: the file mapped to
+     role `"elevation_front"` is actually titled "WOODEN JOINERY DETAIL" in its own title block
+     (not an elevation at all), and `"elevation_rear"`'s text layer decodes to garbled characters
+     (`"TIT.E:-"` instead of `"TITLE:-"`, an embedded-font encoding issue) so its role can't be
+     confirmed either. `semantics.py` detects both automatically via
+     `pdf_ingest.sheet_title_matches_role()` and excludes them from the storey-count cross-check
+     rather than trusting the meta.json label — but does NOT correct `h02.meta.json` itself
+     (not this track's call, and the file may need a human to look at what
+     `elevation_front.pdf` / `elevation_rear.pdf` actually are before it's fixed).
+  2. **h01 has a real plan-vs-elevation storey-count mismatch**: 3 plan sheets assemble into 3
+     floors, but the (heuristic, approximate — see `pdf_ingest.estimate_storey_count_from_elevation`)
+     elevation line-count estimate suggests 4. Surfaced as a structured
+     `"STOREY COUNT MISMATCH (extraction ambiguity candidate)"` note in `assumptions`, ready for
+     Track C's ambiguity engine to pick up as `ambiguity_class="extraction"` once it exists —
+     not resolved by the parser.
+
+### Deferred / not implemented in this build
+
+- Section-sheet parsing (the only legitimate source of `Floor.height_m`, per CLAUDE.md §10.1) is
+  **not implemented** — no section sheet has been supplied for any case yet to develop it
+  against. If/when one lands for h01 or h02 (or a new case), `semantics.py`'s section-handling
+  branch needs actual implementation, not just the current "flag that it's missing" logic.
+- Site/zoning-sheet parsing (plot polygon, zoned area tracing) is likewise **not implemented**
+  for the same reason (none supplied yet). CLAUDE.md §11/§3 assigns the zoning-plan *tracing UI*
+  to Stage 3 / Track D anyway (user traces the zoned area over the uploaded PDF) — this parser
+  only handles the "read an already-digitized site sheet" half, which has nothing to read yet.
+- `jurisdiction.authority` is never inferred from drawing content (deliberately — GMADA vs.
+  MC_KHARAR vs. MC_ZIRAKPUR is a rules-engine/jurisdiction-routing decision per CLAUDE.md, and
+  title-block text alone ("Mohali") doesn't disambiguate it).
+- Vector-PDF footprint/room extraction is explicitly an "envelope + label-positioned rectangle"
+  approximation, not real vectorization — see the long caveat block at the top of
+  `packages/parser/pdf_ingest.py` for the full reasoning. Good enough to unblock Track B/C/D's
+  FAR/coverage/room-count math with plausible numbers, not good enough to trust a specific wall
+  position for an overlay without a user confirming it first.
+- `mutate.py`'s two ops (`offset_edge`, `shrink_room`) only support axis-aligned rectangles
+  (true of the synth smoke file's geometry) and assert that precondition rather than silently
+  mis-transforming a non-rectangular polygon. Demonstrated only against
+  `packages/cases/synth/s_smoke.dxf` per CLAUDE.md §10.5 (no real approved DXF exists yet — h01/h02
+  are PDF-only); the resulting truth files are `provenance: "synthetic"` and assert no
+  `rule_id`/pass-fail verdict (the synth case has no plot/zoned_area for a rule to check against)
+  — they exist purely to prove the harness mechanics (declarative params -> exact derived truth
+  via shapely, no hand-labeling, no LLM).
+
+### Heads-up for Track B / Track D: a cross-track schema mismatch, not caused by Track A
+
+Running the full `tests/` suite (not just `test_parser.py`) turned up 7 pre-existing failures in
+`tests/test_api.py` and `tests/test_rules_engine.py`, all the same root cause and unrelated to
+anything Track A touched: `packages/rules/packs/*.yaml` rules list remedy kinds like
+`"reduce_footprint"` (matching CLAUDE.md §7's own example YAML!), but `Remedy.kind` in the frozen
+`packages/schema/findings.py` only allows `"geometric_edit" | "purchase_chargeable_far" |
+"compounding" | "noc_route" | "zoning_revision_request"` — so `packages/rules/engine.py`'s
+`_remedies()` raises a `pydantic.ValidationError` building the `Remedy` for any rule whose pack
+YAML uses `"reduce_footprint"` (or similar non-enum strings). Since CLAUDE.md itself is the
+source of the mismatched example, this probably needs either a kind-mapping layer in
+`rules/engine.py` (e.g. `"reduce_footprint"` -> `"geometric_edit"`) or an amendment request for
+`Remedy.kind`'s literal set — not something Track A should fix unilaterally in someone else's
+package. Flagging here since it's currently failing tests outside Track A's own suite.
+
+
+---
+
+## Track D handoff (2026-09-19): API contracts for Tracks A/B/C to plug into
+
+Stage 1 scope done: `packages/api/main.py` (FastAPI), `packages/report/overlay.py`,
+`packages/report/render.py` + `packages/report/templates/report.html.j2`, and a Vite React app
+in `web/`. All built and tested against the six frozen stubs only — no dependency on
+`packages/parser`, `packages/rules`, `packages/solver`, or `packages/ambiguity`, per §4.
+`python -m pytest tests/test_api.py tests/test_stubs.py` passes (19/19). Route contracts below
+are the seams the other three tracks plug into; each is a one-line import swap on Track D's side.
+
+### The two adapter seams — implement these function signatures and Track D picks them up automatically
+
+**Track B → `packages/rules/engine.py`:**
+```python
+def run_checks(model: BuildingModel) -> list[Finding]:
+    ...
+```
+`packages/api/checks.py::engine_available()` probes for `packages.rules.engine.run_checks` at
+call time (no caching, no restart needed) and `packages/api/checks.py::run_checks()` calls it
+directly if present. Until then, every route falls back to a small **fixture** finding set (rule
+ids prefixed `FIXTURE.`, citation `status` always `not_stated`/`seed_unverified`, never
+`verified`) that does real shapely containment against `zoned_area` plus four static
+ground-coverage/RWH/stilt/height/tree checks — enough to exercise every `Finding.status` value
+(`violation`, `ambiguity`, `advisory`, `pass`, `unknown`) end to end. **Do not treat the fixture
+rule_ids or thresholds as real** — they're schema exercisers, not a rule pack.
+
+**Track A → `packages/parser/` (any of, tried in order):**
+```python
+packages.parser.ingest.ingest(file_bytes: bytes, filename: str) -> BuildingModel
+packages.parser.dxf_ingest.ingest(file_bytes: bytes, filename: str) -> BuildingModel
+packages.parser.pdf_ingest.ingest(file_bytes: bytes, filename: str) -> BuildingModel
+```
+Probed by `packages/api/parsing.py::try_parse_file()`. Until one exists, `POST /upload` with a
+multipart file returns **501** (not a fake model, not a silent pass) explaining that a
+BuildingModel JSON body should be used instead.
+
+**Track C → `packages/solver/repair.py` and `packages/ambiguity/dossier.py`: not yet wired into
+the API.** No route currently calls these. If you want an endpoint before Track D circles back,
+the natural shape (matching the `checks.py` pattern) would be:
+```python
+# packages/solver/repair.py
+def find_remedies(model: BuildingModel, finding: Finding) -> list[Remedy]:
+    ...
+# packages/ambiguity/dossier.py
+def build_dossier(model: BuildingModel, finding: Finding) -> dict:  # or a frozen-schema type if you add one to findings.py's Remedy-adjacent shape
+    ...
+```
+say so here and Track D will add `POST /remedies` / `POST /ambiguity/dossier` the same way the
+other two adapters work. Today, `Finding.remedies` on violation fixture findings only names the
+remedy *kind* (`geometric_edit`, `zoning_revision_request`) with `verified=False` and no
+`area_lost_sqm`/`edit_ref` — CLAUDE.md §9 reserves inventing those numbers for the real solver.
+
+### Full route contract (`packages/api/main.py`)
+
+```
+GET  /health
+  -> {"status": "ok", "service": "mohali-check-api",
+      "rules_engine_available": bool, "parser_available": bool}
+
+POST /upload
+  multipart/form-data, field "file"  -> BuildingModel (200) if a parser is wired, else 501
+  application/json body = BuildingModel -> validated + echoed back (200), or 422 on schema violation
+
+POST /models/confirm
+  body: {"model": BuildingModel,
+         "corrections": [{"floor_level": int, "room_index": int,
+                           "use": <Room.use literal> | null, "confidence": Confidence | null}]}
+  -> {"model": BuildingModel, "applied": int, "remaining_low_confidence": int}
+  400 (fails loudly, not silently) if a correction references a nonexistent floor_level/room_index.
+  Omitting "confidence" on a correction defaults it to "high" (confirming = no longer low-confidence).
+
+POST /checks/run
+  body: {"model": BuildingModel}
+  -> {"summary": "pre-submission check: N issues found",   # NEVER "approved"/"compliant" (CLAUDE.md §5)
+      "engine_source": "real" | "fixture",
+      "findings": [Finding, ...]}
+
+POST /overlay
+  body: {"model": BuildingModel, "findings": [Finding, ...] | omitted (runs run_checks internally)}
+  -> GeoJSON FeatureCollection: one feature per plot_outline/zoned_area/floor_footprint (context)
+     plus one feature per finding (geometry=null if the finding has no geometry_ref).
+     top-level "properties": {"zoned_area_present": bool, "plot_area_sqm": float | null}
+
+POST /report/html   -> text/html  (same body shape as /overlay)
+POST /report/pdf    -> application/pdf, filename mohali-check-report.pdf (same body shape)
+```
+
+Every response was tested (`tests/test_api.py`) to never contain "approved" or "compliant" as a
+verdict, anywhere including error `detail` strings. `s05_no_zoning`'s containment finding is
+asserted `status="unknown"` on every checks/run call — this is the regression most worth
+re-checking if you touch `checks.py`.
+
+### Report rendering (`packages/report/render.py`, `packages/report/overlay.py`)
+
+- `render_html(model, findings) -> str` and `render_pdf(model, findings) -> bytes` (reportlab
+  platypus — chosen over weasyprint because it installs from a wheel with no system Pango/Cairo
+  dependency, which is a bad bet mid-hackathon). Both share one `_report_context()` so the HTML
+  and PDF can't disagree on numbers or the mandatory footer language.
+- `summary_line(findings)` counts every finding with `status != "pass"` as an "issue" (violation +
+  ambiguity + advisory + unknown all count — an unresolved `unknown` is not safe to submit on).
+- Unit conversion (`SQM_TO_SQYD = 1.196`) happens only inside `render.py`, never upstream —
+  matches CLAUDE.md §1 rule 4.
+- `build_overlay(model, findings)` in `overlay.py` does all polygon/line/point handling through
+  `shapely` (construct + `buffer(0)` repair on invalid rings), never hand-rolled — CLAUDE.md §1
+  rule 3.
+
+### Web app (`web/`) — actually runs
+
+Scaffolded with `npm create vite@latest . -- --template react`, `npm install` completed
+(`web/node_modules` present), **`npm run build` succeeds** (verified — `vite build` produced
+`web/dist/` with no errors). Start it with:
+```bash
+cd web && npm run dev      # Vite dev server, default http://localhost:5173
+```
+It expects the API at `http://127.0.0.1:8000` by default (override with `VITE_API_BASE` env var
+at dev/build time). **Honesty note:** the dev server itself was not started and click-tested in a
+browser in this session (a long-running `npm run dev` foreground process would block the agent
+session) — verification was `npm run build` (compiles/bundles cleanly, catches JSX/import/JSON
+errors) plus a live `uvicorn` smoke test on a throwaway port confirming `/health` and
+`/checks/run` work over real HTTP (not just FastAPI's TestClient) for `s05_no_zoning`, returning
+`FIXTURE.zoned_area_containment: unknown` as expected. If someone runs `npm run dev` + `uvicorn
+packages.api.main:app` and hits a runtime-only bug (vs. a build-time one), that's the gap this
+note is flagging.
+
+Flow implemented: `web/src/App.jsx` — step 1 `UploadScreen` (pick one of six local fixture
+copies of `packages/cases/stubs/*.model.json` under `web/src/fixtures/`, paste raw JSON, or a
+file input that hits the real multipart path and surfaces the 501 honestly) → step 2
+`ConfirmScreen` (wired against `s06_low_conf`'s shape: lists every non-"high"-confidence room,
+lets the user pick a corrected `use`, POSTs to `/models/confirm`) → step 3 `FindingsScreen` (POSTs
+`/checks/run` + `/overlay`, renders a findings table sorted worst-first, an `OverlaySvg` plain-SVG
+renderer of the GeoJSON, and buttons for the HTML/PDF report). No component library; plain
+`fetch()` in `web/src/api.js`.
+
+### Known gaps / honest status
+
+- Fixture findings in `packages/api/checks.py` are illustrative only, not a rule pack — Track B's
+  real `run_checks` supersedes them the moment it's importable, with zero API-layer changes needed.
+- No endpoint yet for Track C's solver/ambiguity outputs (see above) — flag here if you want one
+  before Track D returns to it.
+- `render_pdf`'s reportlab table doesn't paginate `geometry_ref` visuals (text-only report); the
+  overlay/GeoJSON is the visual surface today, consumed by the web app's `OverlaySvg`, not by the
+  PDF.
+- Web app's live browser behavior (as opposed to build-time correctness) is unverified in this
+  session — see the honesty note above.
+
+### Update (2026-09-19, later same day): real rules engine is now live end-to-end through the API
+
+`packages/rules/engine.py` landed mid-session exposing `evaluate(model, pack)` and
+`evaluate_path(model, pack_path)` (not the `run_checks(model)` name in the original contract
+above). `packages/api/checks.py::_find_real_entry_point()` now detects and calls whichever of
+`run_checks` / `evaluate_path` / `evaluate`+`load_pack` is present, and
+`_resolve_pack_path()` matches `model.jurisdiction.rule_pack` ("puda_building_rules_1996") to the
+actual pack file (`packages/rules/packs/puda_1996.yaml`) by falling back to "the only pack file
+present" when the names don't match exactly (they don't, today — Track B, if/when you add a
+second pack, name a file matching the string tracks actually put in
+`jurisdiction.rule_pack`, or tell Track D and this heuristic gets replaced with an explicit map).
+
+Verified live (not fixture) for all six stubs — `checks.run_checks_with_source()` returns
+`source="real"` with no error for `s01`..`s06`, including `s05_no_zoning`'s containment finding
+(`PUDA1996.containment.zoned_area`) correctly at `status="unknown"`. Full suite
+(`python -m pytest tests/`) is 78/78 green.
+
+Also hit and worked around (see Track A's identical finding above, "cross-track schema
+mismatch"): `packages/rules/engine.py`'s `_remedies()` briefly raised `pydantic.ValidationError`
+on `Remedy(kind="reduce_footprint", ...)` for `s03_far_over`, since `reduce_footprint` isn't in
+`Remedy.kind`'s frozen Literal set — this has since been fixed on Track B's side (all tests
+including `tests/test_rules_engine.py::test_s03_flags_far_and_is_compoundable` pass now). Track D
+added defense-in-depth regardless: `checks.run_checks_with_source()` wraps every real-engine call
+in `try/except Exception`, and on any runtime error (not just an import failure) falls back to
+the labeled `FIXTURE.*` findings for that request rather than 500ing `/checks/run`, `/overlay`,
+`/report/html` and `/report/pdf` simultaneously. The swallowed exception is surfaced back to the
+caller as an `"engine_error"` field on `/checks/run`'s response when this happens, so it's visible
+rather than silently masked. This is now dormant (no error currently triggers it) but stays in
+place so one bad rule in a future pack edit can't take down the whole API surface again.
+
+---
+
+## Track C — Solver + Ambiguity engine handoff (2026-09-19)
+
+`packages/solver/` (repair.py, remedies.py) and `packages/ambiguity/` (classifier.py,
+dossier.py) are implemented and tested: `python -m pytest tests/test_solver.py
+tests/test_ambiguity.py tests/test_stubs.py` is green (29 tests), and the full suite
+(`tests/`, including test_eval.py) is green at 46 tests. Nothing outside
+`packages/solver/`, `packages/ambiguity/`, and the two new test files was touched.
+
+### Dependency on Track B's rules engine — how the gap was handled
+
+`packages/rules/engine.py` did not exist yet at the time of this work (only
+`packages/rules/packs/` exists, empty). `packages/solver/repair.py` never imports
+`packages.rules.engine` at module scope. Instead:
+
+- Every solver entry point (`search_repairs`, `solve`) takes an injected
+  `evaluate_fn: Callable[[BuildingModel], list[Finding]]`.
+- `repair.default_evaluate_fn()` will lazily `import packages.rules.engine` and look for one
+  of `evaluate` / `run` / `check` / `evaluate_model` as the callable, **only when explicitly
+  called** — never at import time. It raises a clear `ImportError` telling the caller to pass
+  `evaluate_fn` explicitly if the engine isn't ready or doesn't expose one of those names.
+  **Track B: once `engine.py` lands, either name its entry point one of those four, or tell
+  Track C/D the actual name so `default_evaluate_fn()` can be updated** (one-line change).
+- `tests/test_solver.py` defines its own `fixture_evaluate_fn` (zoned-area containment via
+  shapely + a residential-plotted FAR cap using the real 1.65/1.40/1.25/1.00 bands from
+  `corpus/extracted/puda_building_rules_1996/clauses.jsonl` clause `4#2`) so solver logic is
+  fully verified without waiting on Track B. This fixture is **not** part of
+  `packages/solver` — it's test-only scaffolding matching the brief.
+- **Ask for Track B**: `enumerate_edits()` in `repair.py` maps a violated `Finding` to an
+  edit strategy (shrink a wall vs. trim a projection vs. reduce a basement, etc.) using
+  keyword matching over `rule_id`/`title` (`"setback"`, `"far"`, `"coverage"`,
+  `"projection"`, `"basement"`, `"room"`/`"light"`, since no stable convention existed yet to
+  code against). **If Track B settles on a stable `rule_id` prefix convention (e.g.
+  `*.setback.*`, `*.far.*`, `*.basement.*`), please note it here or in a comment in
+  `engine.py`** — it turns this heuristic into an exact dispatch and removes a source of
+  missed-candidate risk before the demo.
+
+### Shape of `repair.py`'s output (for Track D's report renderer)
+
+```python
+search_repairs(model, violations, evaluate_fn) -> dict[str, list[RepairCandidate]]
+# key = Finding.rule_id of the violation being targeted
+
+@dataclass
+class RepairCandidate:
+    edit_ref: dict            # e.g. {"op": "shrink_wall", "floor": 0, "edge": "rear", "delta_m": 0.4}
+    description: str          # architect-facing prose, numbers only from area_lost_sqm/edit_ref
+    model: BuildingModel      # the edited copy (deep copy of the input model)
+    target_rule_id: str
+    cleared_rule_ids: set[str]  # every rule_id that stopped being a violation, may be >1
+    area_lost_sqm: float
+    verified: bool = True     # always True by construction -- only survivors of a full re-run are kept
+
+RepairCandidate.to_remedy() -> Remedy   # kind="geometric_edit", per the frozen schema
+
+solve(model, findings, evaluate_fn=None, top_n=3) -> dict[str, list[Remedy]]
+# key = violated Finding.rule_id; value = top_n geometric Remedies (cheapest area-loss first)
+# followed by applicable non-geometric Remedies (remedies.py), in that order.
+```
+
+`edit_ref` ops implemented: `shrink_wall`, `shrink_wall_all_floors`, `trim_projection`,
+`reduce_basement_footprint`, `reclassify_room`, `shift_stair` — matches CLAUDE.md §9 point 1's
+list exactly.
+
+**Known geometry limitation**: all edit ops assume axis-aligned, simple-rectangle-ish
+footprints and axis-aligned plot edges (true of every stub, and of the one planned synth DXF
+per the naming-chaos brief — but not guaranteed for a real DXF with non-rectangular
+footprints). `shrink_wall` will raise if an edge isn't (roughly) axis-aligned. **Ask for
+Track A**: if/when real DXF geometry comes in with non-rectangular footprints, this needs a
+buffer/offset-based generalization of `shrink_wall` (shapely supports this — `polygon.buffer`
+on one side is more involved than the current bounds-based rectangle shrink, budget time for
+it before Stage 3 if real footprints are irregular).
+
+`remedies.non_geometric_remedies_for_finding(finding, model) -> list[Remedy]` returns
+`purchase_chargeable_far` / `compounding` / `noc_route` / `zoning_revision_request` Remedies
+that apply, using only `finding.observed`/`finding.required`/`finding.compoundable`/
+`finding.citation` — no fee schedule or percentage cap is stated because **no
+compounding/composition-policy or chargeable-FAR circular has been ingested into the corpus**
+(per the Stage 0 handoff above, only 4 PDFs were supplied and none is a policy/fee doc for
+these two remedies). If such a document arrives, wire its verified values into these two
+functions — until then they name the mechanism and, where computable, the excess area, but
+never a fee.
+
+### Shape of `dossier.py`'s output (for Track D's report renderer)
+
+```python
+classify_all(model, findings=None, vintage_cutoffs=None, discretionary_clauses=None,
+             definitional_far_clause=None, objection_history=None) -> list[AmbiguityTrigger]
+
+@dataclass
+class AmbiguityTrigger:
+    ambiguity_class: str       # one of CLAUDE.md §8's seven
+    reason: str                # legible one-liner, why it fired
+    evidence: dict             # deterministic facts, not prose
+    rule_id: str | None
+
+build_dossier(trigger, model, far_cap=None, narrate_fn=None) -> Dossier
+
+@dataclass
+class Dossier:
+    ambiguity_class: str
+    rule_id: str | None
+    title: str
+    readings: list[Reading]           # Reading(label, description, outcome=None, citation=None)
+    safer_reading_label: str | None
+    safer_reason: str
+    proof_document: dict | None       # citation(s) to carry into the submission
+    justification_paragraph: str      # submission-ready prose, grounded only in `facts`
+    facts: dict                       # every number the paragraph cites, computed via shapely/plain python
+    is_confirmation_flag: bool = False  # True => route to confirmation UI, not a GMADA dossier
+```
+
+`narrate_fn: Callable[[dict], str]` is pluggable per call — defaults to hand-written templates
+in `dossier.py` (one per ambiguity class), swappable later for a live LLM call (e.g. from
+`packages/api`) with the exact same `facts` contract, so the grounding guarantee doesn't
+change when a real model starts writing the prose.
+
+**Judgment call on s06 (low-confidence room labels)**: classified as `extraction`
+(`AmbiguityTrigger.evidence["source"] == "low_confidence_label"`), but `build_dossier` routes
+this case to a **lightweight confirmation flag** (`is_confirmation_flag=True`, no
+`proof_document`, one-line rationale) rather than a full GMADA-submission dossier. Reasoning:
+there is no legal ambiguity or clause in dispute here — it's an OCR/vision-extraction
+confidence problem that CLAUDE.md's own schema already routes through the model-confirmation
+screen (`Confidence` semantics in §5) before any rule runs. Writing a justification paragraph
+architects could submit to GMADA about *our own extraction uncertainty* would be nonsensical;
+Track D should render `is_confirmation_flag=True` dossiers as a "confirm this on-screen"
+prompt, not as an ambiguity card in the findings report.
+
+### Flagship example generated (s04_stilt4_500, definitional ambiguity)
+
+Computed facts (via shapely on the actual stub geometry, footprint 14m x 14m = 196 sqm per
+floor, 4 upper floors + 1 stilt floor, 500 sqm plot, FAR cap 1.00 per
+`puda_building_rules_1996` clause `4#2`'s >430 sqm band):
+
+- Reading A (exclude stilt): covered area 784.0 sqm, FAR 1.568, excess 284.0 sqm over cap
+- Reading B (include stilt): covered area 980.0 sqm, FAR 1.960, excess 480.0 sqm over cap
+- Safer reading for submission: B (literal reading — no stilt-exclusion circular is in the
+  verified corpus, so relying on the unwritten "stilt+4" concession is the riskier position)
+
+Full generated justification paragraph:
+
+> This design places an open, columns-only stilt storey below 4 upper floors on a 500 sqm
+> plot. Whether that stilt storey's footprint counts toward covered area for floor area ratio
+> purposes is not settled by the text on file: puda_building_rules_1996 clause 4#2 defines
+> floor area ratio for residential plotted development by plot-size band but does not mention
+> a stilt, or any other open, non-habitable ground storey, anywhere in its text. Reading A --
+> exclude the stilt storey (treat it as the open parking storey the 'stilt+4' concession
+> common in more recent GMADA/PUDA practice contemplates, even though that concession is not
+> itself present in the rule text on file): covered area is 784.0 sqm, giving a floor area
+> ratio of 1.568. Reading B -- include the stilt storey (the literal reading of the clause,
+> which defines the ratio without any stilt carve-out): covered area is 980.0 sqm, giving a
+> floor area ratio of 1.960. Against the 1.00 cap that applies to this plot's size band under
+> puda_building_rules_1996 clause 4#2, Reading A leaves 284.0 sqm of covered area in excess
+> and Reading B leaves 480.0 sqm in excess -- both readings are over the cap on the numbers as
+> drawn, so the choice between them changes the magnitude of the shortfall and which remedy
+> (footprint reduction, chargeable-FAR purchase, or compounding) is realistic, not whether a
+> violation exists at all. Because no circular or amendment codifying a stilt exclusion is
+> present in the verified corpus for this jurisdiction, Reading B -- the literal, no-carve-out
+> reading -- is the safer basis for this submission: it does not rely on an unwritten
+> concession an examining officer may or may not extend, and it does not understate the
+> covered area on record. Reading A remains worth raising, in writing, as the basis for a
+> discretionary relaxation request if the office's current practice is understood to allow it
+> -- but it should be argued for explicitly, not assumed.
+
+Note this is honest rather than maximally dramatic: on the actual stub numbers, **both**
+readings are FAR violations (cap is 1.00 either way for a >430 sqm plot), so the dossier does
+not claim the stilt question flips pass/fail — it correctly frames the real stake as
+violation *magnitude* and which remedy (footprint cut vs. chargeable-FAR purchase vs.
+compounding) is realistic. If the demo wants a version where the ambiguity flips the verdict,
+that needs either a smaller plot (different FAR band) or a higher FAR cap band value once
+those numbers are verified against the gazette — flagging this so whoever wires the demo
+script picks the plot size deliberately.
+
+### Other ambiguity classes — grounding used
+
+- `vintage`: demonstrated against a real cutoff actually present in the corpus — Rule 16(ii)
+  (`puda_building_rules_1996:4#2`) ties charges to whether allotment predates 30-6-1997.
+  `classify_vintage()` takes the cutoff/citation as explicit arguments rather than hardcoding
+  bylaw knowledge this module wasn't given.
+- `discretionary`: keyword-triggered on phrases actually seen in Punjab drafting style ("may
+  be permitted", "at the discretion of", "competent authority may", etc.) — pass the real
+  clause text once Track B's rule-authoring surfaces a discretionary clause; none was
+  hardcoded from the current 4-doc corpus since none of the priority-list clauses (15-26)
+  were fully read for this phrase during this pass.
+- `instrument_conflict`: fires on 2+ Findings sharing the same `title` (proxy for "same
+  conceptual check") whose citations disagree in `(doc, clause)` and `required` value. **Ask
+  for Track B**: a stable `check_family` field (separate from `rule_id`, which differs per
+  pack) would replace the title-matching proxy with something exact.
+- `practice_divergence`: requires an explicit `objection_history` list (real casework, e.g.
+  from a rejected-drawing + objection-memo pair per CLAUDE.md §10.4) — never inferred from a
+  BuildingModel alone. No such casework exists in this repo yet; the trigger and dossier are
+  tested against a synthetic history record and ready to wire in real objection-memo data
+  under `packages/cases/real/` when it lands (Track A/D).
+
+### Blockers / open items
+
+- None blocking. The two integration asks above (rule_id naming convention;
+  `default_evaluate_fn()`'s expected entry-point name) are conveniences, not blockers — the
+  pluggable-`evaluate_fn` design means Track C's code runs today against a fixture and will
+  run unchanged against the real engine once it's wired in by whoever assembles the pipeline
+  in Stage 2.
+
+---
+
+## Track B — Rules handoff (2026-09-19)
+
+Built the corpus rule-synthesis pipeline (`tools/transcribe.py`, `tools/verify.py`), extended
+`tools/coverage.py` (had a real bug, see below), authored `packages/rules/packs/puda_1996.yaml`
+(21 rule entries, 18 `enforced: true`), `packages/rules/engine.py` (pure shapely-based
+evaluation), and `packages/gis/` (placeholder periphery layer + lookup). Tests in
+`tests/test_rules_engine.py` (16 tests) plus the existing `tests/test_stubs.py` are green; full
+repo suite (`pytest tests/`, 79 tests including `test_api.py`) is green.
+
+### How the two-pass transcribe/verify discipline was actually run (CLAUDE.md §1 rule 1, §6.4/§6.5)
+
+Per the task brief, transcription and verification were each done as one real, fresh Claude
+subagent call (via the Agent tool) rather than hand-typed:
+
+- **Transcription pass**: one subagent given *only* the raw clause text of the 9 priority
+  clauses (15#2, 4#2, 16, 17, 18, 20, 22, 24, 25, 26 — note 16 is the *original* pre-amendment
+  Rule 16 text, kept only for the instrument-conflict comparison) with a strict
+  transcribe-don't-infer prompt. Output saved verbatim at
+  `corpus/extracted/puda_building_rules_1996/rule_synthesis/transcribe_pass1.json` (58 proposed
+  numeric facts).
+- **Verification pass**: a *second, fresh* subagent call, given only the raw clause texts again
+  plus the stripped `(clause_id, key, value, unit, applies_to)` tuples — explicitly NOT the
+  transcriber's `quoted_fragment` or reasoning — asked to answer match/mismatch/not_stated per
+  item. Output saved at `.../rule_synthesis/verify_pass1.json`.
+- **Result**: 0 `mismatch` verdicts (source text was clean), but the verifier correctly
+  **downgraded 2 of the transcriber's "stated" claims to `not_stated`** — `basement_max_coverage_
+  vs_ground_floor` and `landing_min_width_vs_staircase` — because clause 24 and clause 25 state a
+  *relation* ("shall not exceed the area on the ground floor" / "shall not be less than the width
+  of the staircase"), not a bare number, and the transcriber had encoded that as a literal "100%"
+  which the text does not say. This is exactly the failure mode the two-pass discipline exists to
+  catch. Both rules are still enforced in the engine, but as direct shapely/geometry relational
+  checks (no numeric constant used) with `status: seed_unverified`.
+- `tools/transcribe.py` / `tools/verify.py` are real, rerunnable scripts implementing the same
+  contract (strict prompts, replay-from-cache or live `ANTHROPIC_API_KEY` call) — see their
+  module docstrings. Neither script fabricates a value itself if no key and no `--replay` cache
+  are given; it exits with an explanation instead (CLAUDE.md §1 rule 1 applies to the tooling,
+  not just the model).
+
+### Rule status breakdown (`packages/rules/packs/puda_1996.yaml`, 21 rules)
+
+- **verified** (18): site coverage slab bands (15#2); FAR bands upto_225/225_325/325_430 (4#2);
+  front/rear + side setback formulas (17); height-vs-road relation is actually
+  `seed_unverified` (see below, no bare number); chajja/balcony max projection, row-house small-
+  site cap, door/window max, min clear height above plinth, max width vs site width (18);
+  courtyard min area, min width (20); habitable room min height, service room min height, light/
+  ventilation ratio (22); basement min height (24); staircase min width residential,
+  commercial/public, max riser, min tread (25); roof projection recede (26).
+- **seed_unverified** (2): `PUDA1996.containment.zoned_area` (structural, no bare number to
+  verify), `PUDA1996.height.max_vs_road_setback` (pure relational paraphrase of clause 17(1), no
+  numeric constant), plus the two relational rules the verifier downgraded (basement coverage
+  relation, landing width relation) and the courtyard-vs-mean-height fraction — **note**: several
+  of the "verified" numbers above (fraction_of_height, min_m values in the setback/projection
+  rules) came from clause 17/18/20/22 text directly and did pass verification; only the *specific*
+  connecting relations without their own bare number are seed_unverified. See the pack file's own
+  per-rule `status` field for the authoritative list — this paragraph is a summary, not a
+  substitute for reading it.
+- **conflict** (0): none — clean source text this run. The engine still handles this status
+  correctly if it ever occurs (`status="unknown"`, `ambiguity_class="instrument_conflict"`,
+  never a silent pass) — see `test_conflict_rules_never_silently_pass` in
+  `tests/test_rules_engine.py`.
+- **not_stated** (1, deliberately): `PUDA1996.far.above_430_gap` — the 1998 amendment to Rule 16
+  (clause `4#2`) substitutes the *entire* rule and simply does not restate a FAR cap for plots
+  above 430 sqm (the original Rule 16(c)(iv) had 1.00). Modeled as a real
+  `ambiguity_class="instrument_conflict"` finding carrying both the superseded value and the gap,
+  never a silent carryover of 1.00 and never a silent skip.
+
+### What Track C (solver/ambiguity) should know
+
+- **Ambiguity-producing rule_ids from this engine**: `PUDA1996.far.above_430_gap`
+  (`ambiguity_class="instrument_conflict"`, fires only for plot_area_sqm >= 430) and
+  `PUDA1996.far.stilt_treatment` (`ambiguity_class="definitional"`, fires whenever any
+  `Floor.is_stilt` is True). Both are emitted *in addition to* the normal FAR band
+  pass/violation finding (computed conservatively excluding the stilt footprint) — they don't
+  replace it. `PUDA1996.far.stilt_treatment`'s `observed` field is a string containing both
+  computed FAR readings, e.g. `"FAR excluding stilt: 1.568; FAR including stilt: 1.96"` — parse
+  it if you want the two numbers programmatically rather than re-deriving them (or just recompute
+  from `model.floors[i].is_stilt`/`.footprint`, both are cheap via shapely).
+- **rule_id naming convention** (per your ask): every rule_id in this pack is
+  `PUDA1996.<family>.<band_or_variant>`, e.g. `PUDA1996.setback.front_rear_formula`,
+  `PUDA1996.far.225_325`, `PUDA1996.courtyard.min_area`. Families used: `containment`,
+  `site_coverage`, `far`, `setback`, `height`, `projection`, `courtyard`, `room`, `basement`,
+  `staircase`, `roof_projection`. This should make `repair.py`'s keyword-matching heuristic exact
+  if you want to switch to prefix dispatch (`rule_id.split(".")[1]`).
+- **`run_checks(model) -> list[Finding]` now exists** in `packages/rules/engine.py` (single
+  BuildingModel argument, resolves the pack from `model.jurisdiction.rule_pack` automatically —
+  same resolution order as `packages/api/checks.py`'s `_resolve_pack_path`). `default_evaluate_fn`
+  in `repair.py` currently looks for `evaluate` / `run` / `check` / `evaluate_model` — none of
+  those match. Either add `"run_checks"` to that list, or call
+  `packages.rules.engine.run_checks` directly; it's the simplest single-argument entry point and
+  is now also what `packages/api/checks.py` finds when it probes for `run_checks` first.
+- **No `check_family` field was added** to the pack (your ask for `instrument_conflict`
+  detection) — the `PUDA1996.<family>.*` rule_id prefix convention above should already give you
+  a exact split without a new field, but shout if you need something more structured (e.g. two
+  rules in *different* packs sharing a family) once a second jurisdiction pack exists.
+
+### What Track D (report/API) should know
+
+- Confirmed working end-to-end: `packages/api/checks.py`'s `_find_real_entry_point()` finds
+  `evaluate_path` and `evaluate`+`load_pack` on `packages.rules.engine` and both resolve
+  correctly via `_resolve_pack_path()` (exact match on `puda_1996.yaml` since it's the only pack
+  file). `run_checks(model)` (see above) is also now available as a third, simpler option if you
+  want to drop the `_find_real_entry_point` probing logic later — same single-argument shape you
+  originally documented as the contract.
+- **The `test_api.py` failures Track A flagged are now fixed.** Root cause was exactly what Track
+  A's note above says: `packages/rules/packs/*.yaml` used `remedies: [reduce_footprint, ...]`
+  (matching CLAUDE.md §7's own — inconsistent with the frozen schema — example), but
+  `Remedy.kind`'s `Literal` in `packages/schema/findings.py` doesn't include `"reduce_footprint"`.
+  Fixed by using `"geometric_edit"` everywhere in `puda_1996.yaml` instead (shrinking a footprint
+  *is* a geometric edit; no schema change needed, no new remedy kind invented). Full repo test
+  suite (`pytest tests/`) is green at 79/79, `test_api.py` at 15/15.
+- Every `Finding` this engine emits carries a real `Citation` (`doc`, `clause`, `version`,
+  `status`) resolved straight from the pack's `source` field — no finding without one, per
+  CLAUDE.md §1 rule 2. `citation.status` mirrors the rule's pack-level `status`
+  (verified/seed_unverified/conflict/not_stated), so the report layer can style them differently
+  without a second lookup.
+- `geometry_ref` is populated on violations where a specific ring/line is implicated (footprint,
+  courtyard ring, projection polygon, plot polygon for FAR/coverage/height) and left `None` when
+  a finding isn't about one specific shape (e.g. the stilt-FAR ambiguity, which concerns two
+  computed numbers, not a location).
+
+### Schema-gap asks (frozen schema not touched, per CLAUDE.md §1 rule 7 — filing the need here)
+
+`packages/schema/building_model.py` has no field for a plot/building's **use classification**
+(residential_plotted / commercial / industrial / group_housing / public). Every rule in
+`puda_1996.yaml` is authored `applies_when.use: residential_plotted`, and
+`packages/rules/engine.py::_applies()` currently treats this filter as always-true (documented
+assumption, printed in the pack header) since there's nothing to check it against. If a schema
+revision ever happens, adding something like `Jurisdiction.building_use` (or a top-level
+`BuildingModel.building_use`) would let the engine actually gate commercial/industrial/public
+rules (several already sit in the pack with `enforced: false` for exactly this reason: FAR/
+coverage bands for those uses were transcribed and verified but have nowhere to attach).
+
+Also **not enforced today for lack of a schema field** (numeric facts are verified and sitting in
+the pack, ready the moment a field exists): door/window projection width, projection height-
+above-plinth, courtyard-width-vs-abutting-wall-height, habitable-room-open-space-width,
+commercial/public staircase width, staircase riser/tread, landing width. None of these block the
+demo priority list (CLAUDE.md §7 items 1-5 are all `enforced: true`).
+
+### GIS (`packages/gis/`) — kept intentionally minimal per the task brief's priority order
+
+`packages/gis/layers/periphery.geojson` is an explicitly-labeled **illustrative placeholder**
+polygon (not a digitized Periphery Control Act 1952 boundary — no GIS source data was supplied,
+only the legal text in `periphery_control_rules_1959.pdf`). `packages/gis/lookup.py::
+check_periphery(lon, lat)` does real point-in-polygon via shapely but always returns
+`confidence: "low"` and a note explaining the placeholder status. Not wired into the rules engine
+or Findings — `BuildingModel` has no real-world lon/lat field to feed it (only a local metric
+`plot_polygon`), so this needs a geocoding step from Track A/D before it can produce a Finding.
+Left as a standalone module for whoever adds that step.
+
+### Files changed/added (all inside this track's packages per CLAUDE.md §4)
+
+- `tools/transcribe.py`, `tools/verify.py` (new)
+- `tools/coverage.py` (bugfix: `load_rule_clause_ids()` was building bare clause numbers instead
+  of `"<doc_id>:<clause>"` ids, so it never matched anything in `clauses.jsonl` and reported
+  "rules referencing this doc: 0" even after rules existed — fixed to pair `doc:`/`clause:` on
+  the same YAML line)
+- `packages/rules/__init__.py`, `packages/rules/engine.py`, `packages/rules/packs/puda_1996.yaml` (new)
+- `packages/gis/__init__.py`, `packages/gis/layers/periphery.geojson`, `packages/gis/lookup.py` (new)
+- `corpus/extracted/puda_building_rules_1996/rule_synthesis/{transcribe_pass1.json,verify_pass1.json}` (new — the audit trail)
+- `corpus/extracted/*/REPORT.md` (regenerated via `python tools/coverage.py`; puda_building_rules_1996's
+  orphan list dropped from 15 numeric clauses to 3 — the 3 remaining are genuinely out of this
+  pack's scope: manholes/absorption-pits drainage clauses and the IT-park FSI relaxation clause)
+- `tests/test_rules_engine.py` (new, 16 tests)

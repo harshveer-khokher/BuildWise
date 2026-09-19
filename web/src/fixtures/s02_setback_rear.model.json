@@ -1,0 +1,214 @@
+{
+  "source": "dxf",
+  "jurisdiction": {
+    "authority": "GMADA",
+    "sector": "70",
+    "plot_no": "S02",
+    "allotment_date": "2019-04-01",
+    "rule_pack": "puda_building_rules_1996"
+  },
+  "plot_polygon": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      12.5,
+      0.0
+    ],
+    [
+      12.5,
+      20.0
+    ],
+    [
+      0.0,
+      20.0
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ],
+  "plot_area_sqm": 250.0,
+  "zoned_area": [
+    [
+      1.5,
+      3.0
+    ],
+    [
+      11.0,
+      3.0
+    ],
+    [
+      11.0,
+      17.0
+    ],
+    [
+      1.5,
+      17.0
+    ],
+    [
+      1.5,
+      3.0
+    ]
+  ],
+  "edges": [
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          12.5,
+          0.0
+        ]
+      ],
+      "faces_road": true,
+      "road_width_m": 12.0,
+      "role": "front"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          20.0
+        ],
+        [
+          12.5,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "rear"
+    },
+    {
+      "line": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_a"
+    },
+    {
+      "line": [
+        [
+          12.5,
+          0.0
+        ],
+        [
+          12.5,
+          20.0
+        ]
+      ],
+      "faces_road": false,
+      "road_width_m": null,
+      "role": "side_b"
+    }
+  ],
+  "floors": [
+    {
+      "level": 0,
+      "is_stilt": false,
+      "footprint": [
+        [
+          2.0,
+          3.5
+        ],
+        [
+          10.5,
+          3.5
+        ],
+        [
+          10.5,
+          18.2
+        ],
+        [
+          2.0,
+          18.2
+        ],
+        [
+          2.0,
+          3.5
+        ]
+      ],
+      "height_m": 3.2,
+      "rooms": [
+        {
+          "polygon": [
+            [
+              2.0,
+              3.5
+            ],
+            [
+              6.0,
+              3.5
+            ],
+            [
+              6.0,
+              8.5
+            ],
+            [
+              2.0,
+              8.5
+            ],
+            [
+              2.0,
+              3.5
+            ]
+          ],
+          "use": "living",
+          "floor": 0,
+          "openings_area_sqm": 3.5,
+          "confidence": "high"
+        },
+        {
+          "polygon": [
+            [
+              6.0,
+              14.0
+            ],
+            [
+              10.5,
+              14.0
+            ],
+            [
+              10.5,
+              18.2
+            ],
+            [
+              6.0,
+              18.2
+            ],
+            [
+              6.0,
+              14.0
+            ]
+          ],
+          "use": "bedroom",
+          "floor": 0,
+          "openings_area_sqm": 2.0,
+          "confidence": "high"
+        }
+      ]
+    }
+  ],
+  "projections": [],
+  "courtyards": [],
+  "mumty": null,
+  "parking_bays": [],
+  "boundary_wall_height_m": null,
+  "has_rwh": false,
+  "tree_count": 0,
+  "assumptions": [
+    "Synthetic rear-setback violation: rear wall sits 1.2 m inside the required rear setback (footprint runs to y=18.2, envelope stops at y=17.0). A 0.4 m trim is one candidate the solver should surface among several; it is not asserted to be the unique or minimal fix here."
+  ]
+}

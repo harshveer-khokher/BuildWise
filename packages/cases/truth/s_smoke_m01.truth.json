@@ -1,0 +1,56 @@
+{
+  "case_id": "s_smoke_m01",
+  "provenance": "synthetic",
+  "note": "Harness smoke test on synthetic geometry (CLAUDE.md \u00a710.3/\u00a710.5) -- proves mutate.py can derive an exact geometric truth from declarative mutation parameters, deterministically, with no hand-labeling and no LLM in the loop (CLAUDE.md \u00a71 rule 1). This is NOT a labeled rule-violation case: the synth smoke file has no plot_polygon/zoned_area, so no PUDA rule_id or pass/fail verdict is asserted here. Never counts toward eval headline metrics.",
+  "source_dxf": "D:\\CS\\Projects\\Plaksha Hackathon\\packages\\cases\\synth\\s_smoke.dxf",
+  "mutated_dxf": "D:\\CS\\Projects\\Plaksha Hackathon\\packages\\cases\\synth\\mutated\\s_smoke_m01.dxf",
+  "mutation": {
+    "op": "offset_edge",
+    "layer": "A-WALL-EXTR",
+    "edge": "north",
+    "delta_m": 1.2
+  },
+  "ground_truth": {
+    "before_polygon": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        10.0,
+        0.0
+      ],
+      [
+        10.0,
+        8.0
+      ],
+      [
+        0.0,
+        8.0
+      ]
+    ],
+    "after_polygon": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        10.0,
+        0.0
+      ],
+      [
+        10.0,
+        9.2
+      ],
+      [
+        0.0,
+        9.2
+      ]
+    ],
+    "north_edge_coordinate_before_m": 8.0,
+    "north_edge_coordinate_after_m": 9.2,
+    "area_before_sqm": 80.0,
+    "area_after_sqm": 92.0,
+    "area_delta_sqm": 12.0
+  }
+}

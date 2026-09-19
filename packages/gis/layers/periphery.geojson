@@ -1,0 +1,27 @@
+{
+  "type": "FeatureCollection",
+  "_placeholder_notice": "ILLUSTRATIVE / PLACEHOLDER ONLY. This is NOT a digitized boundary of the actual Punjab New Capital (Periphery) Control Act 1952 / Periphery Control Rules 1959 zone. No GIS source data for the real periphery boundary was supplied to this build (see corpus/raw/periphery_control_rules_1959.pdf, which is legal text only, no maps). This polygon is a rough, arbitrarily-placed illustrative ring around a Mohali-area coordinate purely so packages/gis/lookup.py has something to run point-in-polygon against for demo/dev purposes. Never present this polygon to a user as an authoritative periphery boundary, and never let a finding derived from it claim a periphery violation with confidence -- see lookup.py, which always returns confidence='low' and a citation flagging this file as a placeholder.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Periphery control zone (PLACEHOLDER -- not a real digitized boundary)",
+        "source": "illustrative only, not derived from any GIS dataset or survey",
+        "doc_id": "periphery_control_rules_1959",
+        "status": "seed_unverified"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [76.60, 30.60],
+            [76.90, 30.60],
+            [76.90, 30.85],
+            [76.60, 30.85],
+            [76.60, 30.60]
+          ]
+        ]
+      }
+    }
+  ]
+}

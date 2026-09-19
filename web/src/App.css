@@ -1,0 +1,128 @@
+.app-shell {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+header h1 {
+  margin-bottom: 2px;
+}
+
+.steps {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0 24px;
+}
+
+.step {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--border, #eaecf0);
+  font-size: 13px;
+}
+
+.step.active {
+  background: #2970ff;
+  color: white;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+textarea {
+  width: 100%;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.hint {
+  color: #667085;
+  font-size: 13px;
+}
+
+.error {
+  color: #d92d20;
+  font-weight: bold;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+th, td {
+  border: 1px solid var(--border, #d0d5dd);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #f2f4f7;
+}
+
+.row-flagged {
+  background: #fff8e1;
+}
+
+.confidence-low { color: #d92d20; font-weight: bold; }
+.confidence-medium { color: #b54708; font-weight: bold; }
+.confidence-high { color: #027a48; }
+
+.status-violation { color: #d92d20; font-weight: bold; }
+.status-ambiguity { color: #b54708; font-weight: bold; }
+.status-unknown { color: #667085; font-weight: bold; }
+.status-advisory { color: #175cd3; font-weight: bold; }
+.status-pass { color: #027a48; }
+
+.citation {
+  font-size: 11px;
+  color: #667085;
+}
+
+.remedies {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #475467;
+}
+
+.summary-banner {
+  background: #fff4e5;
+  border: 1px solid #f79009;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-weight: bold;
+}
+
+.overlay-svg {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  background: #f9fafb;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 8px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+button {
+  cursor: pointer;
+}
