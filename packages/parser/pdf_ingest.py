@@ -123,6 +123,18 @@ _PLOT_RE = re.compile(r"Plot\s*No\.?\s*(\S+)", re.IGNORECASE)
 _PHASE_SECTOR_RE = re.compile(r"(Phase|Sector)\s*[-:]?\s*(\S+)", re.IGNORECASE)
 
 
+_PHASE_SECTOR_WINDOW_CHARS = 60
+"""How far past a "Plot No ..." match to look for its Phase/Sector. These sheets also print the
+architect firm's own office address ("S.C.O. 63, Phase-2, Mohali") elsewhere on the same page,
+which contains an unrelated Phase/Sector token -- observed on both h01 and h02, where the office
+address (Phase-2) appears in the text *before* the project's actual "Plot No 351, Phase-4" /
+"Plot No.1002, phase -4". A page-wide "first match wins" search silently picks up the office's
+phase instead of the project's. The two are reliably adjacent in this office's convention
+("Plot No <N>, Phase-<M>"), so anchoring the search to right after the plot-number match fixes
+it without guessing -- if no Phase/Sector is found in that window, `sector` is left None rather
+than falling back to a page-wide search that would reproduce the same bug."""
+
+
 def extract_title_block(text: str) -> dict[str, Any]:
     """Best-effort key facts from a sheet's flattened text (title block is NOT a separate
     region in these PDFs -- it is a rotated strip whose text lands inline with everything
@@ -142,9 +154,11 @@ def extract_title_block(text: str) -> dict[str, Any]:
     m = _PLOT_RE.search(text)
     if m:
         plot_no = m.group(1).rstrip(",")
-    for kind, val in _PHASE_SECTOR_RE.findall(text):
-        sector = f"{kind.title()}-{val.rstrip(',')}"
-        break
+        window = text[m.end(): m.end() + _PHASE_SECTOR_WINDOW_CHARS]
+        pm = _PHASE_SECTOR_RE.search(window)
+        if pm:
+            kind, val = pm.group(1), pm.group(2)
+            sector = f"{kind.title()}-{val.rstrip(',')}"
     fields["plot_no"] = plot_no
     fields["sector"] = sector
     return fields
