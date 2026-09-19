@@ -5,6 +5,7 @@ Usage:
     python tools/run_check.py h01 --authority GMADA    # override jurisdiction before checking
     python tools/run_check.py s02_setback_rear         # a stub under packages/cases/stubs/
     python tools/run_check.py h01 --json               # machine-readable output
+    python tools/run_check.py h01 --authority GMADA --markdown -o report.md   # full report file
 
 CLAUDE.md §5: this never prints "approved" or "compliant" -- only
 "pre-submission check: N issues found".
@@ -48,6 +49,8 @@ def main() -> None:
     ap.add_argument("name", help="case name under packages/cases/real/, or stub name under packages/cases/stubs/")
     ap.add_argument("--authority", default=None, help="override jurisdiction.authority, e.g. GMADA (simulates confirming it on-screen)")
     ap.add_argument("--json", action="store_true", help="print findings as JSON instead of a table")
+    ap.add_argument("--markdown", action="store_true", help="print a full Markdown report (bylaws cited + every issue) instead of a table")
+    ap.add_argument("-o", "--out", default=None, help="write output to this file instead of stdout (works with --markdown or --json)")
     args = ap.parse_args()
 
     model = load_model(args.name)
@@ -62,8 +65,23 @@ def main() -> None:
 
     findings = run_checks(model)
 
+    if args.markdown:
+        from packages.report.render import render_markdown
+        text = render_markdown(model, findings)
+        if args.out:
+            pathlib.Path(args.out).write_text(text, encoding="utf-8")
+            print(f"wrote {args.out}", file=sys.stderr)
+        else:
+            print(text)
+        return
+
     if args.json:
-        print(json.dumps([f.model_dump(mode="json") for f in findings], indent=2))
+        text = json.dumps([f.model_dump(mode="json") for f in findings], indent=2)
+        if args.out:
+            pathlib.Path(args.out).write_text(text, encoding="utf-8")
+            print(f"wrote {args.out}", file=sys.stderr)
+        else:
+            print(text)
         return
 
     issues = sum(1 for f in findings if f.status != "pass")
