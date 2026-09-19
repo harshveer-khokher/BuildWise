@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { groupByRuleId, groupHeadingTitle, sortGroups, SEVERITY_LABEL } from "../lib/findings";
-import { StatusBadge, CitationStatusNote } from "./StatusBadge";
+import { StatusBadge } from "./StatusBadge";
 
 function formatValue(v) {
   return v === null || v === undefined || v === "" ? "—" : String(v);
@@ -52,12 +52,6 @@ function Citation({ citation }) {
       <div>
         <dt>Version</dt>
         <dd>{citation.version}</dd>
-      </div>
-      <div>
-        <dt>Verification</dt>
-        <dd>
-          <CitationStatusNote status={citation.status} />
-        </dd>
       </div>
       {citation.url && (
         <div>
