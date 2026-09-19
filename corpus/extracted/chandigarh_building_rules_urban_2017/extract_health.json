@@ -1,0 +1,17 @@
+{
+  "doc_id": "chandigarh_building_rules_urban_2017",
+  "doc_type": "base_rules",
+  "sha256": "205fddc15ea54d98ad9ce769a7fba6994cc5120c692f61a45ba62e636be1d132",
+  "page_count": 123,
+  "clause_count": 88,
+  "ocr_pages": [
+    1,
+    54,
+    67,
+    98
+  ],
+  "anomalies": [
+    "clause '12.2 PROVISIONS FOR HIGH RISE DEVELOPMENT' has no entry of its own: the source PDF typesets its heading as '12 . 2PROV ISIONS...' (malformed spacing), which the sub-clause matcher does not recognise. Its brief intro text is folded into clause 12.1's text instead. Its own numbered children (12.2.1-12.2.7) are captured correctly.",
+    "rejected implausible sub-clause number '11.50' at page 62 (heading would have been 'High voltage lines above 11') -- almost certainly a table value, not a real heading."
+  ]
+}

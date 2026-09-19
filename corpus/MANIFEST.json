@@ -60,6 +60,21 @@
       "effective_to": null,
       "jurisdiction_scope": "GMADA / PUDA (state-wide unless MC-area byelaws supersede)",
       "notes": "Governs apartment/plot allotment eligibility and promoter disclosure obligations. Not related to building-dimension compliance. Kept as reference in case an allotment-eligibility ambiguity ever needs a citation; never a basis for a violation finding."
+    },
+    {
+      "doc_id": "chandigarh_building_rules_urban_2017",
+      "title": "Chandigarh Building Rules (Urban) - 2017",
+      "doc_type": "base_rules",
+      "source_filename": "RUCNAL000061.pdf",
+      "raw_path": "corpus/raw/chandigarh_building_rules_urban_2017.pdf",
+      "sha256": "205fddc15ea54d98ad9ce769a7fba6994cc5120c692f61a45ba62e636be1d132",
+      "fetched_at": "2026-09-20",
+      "version": "2017-07-25",
+      "notification_no": "No. 201711/2/70-UTFI(4)-2017/6994 dated 25/7/2017",
+      "effective_from": "2017-07-25",
+      "effective_to": null,
+      "jurisdiction_scope": "Union Territory, Chandigarh (excludes Abadi Deh of Villages / inhabitations within Lal Dora)",
+      "notes": "First document ingested for a SECOND jurisdiction/authority (Chandigarh UT), distinct from GMADA/PUDA -- this is a new authority value not present in the frozen BuildingModel.Jurisdiction.authority enum ('GMADA'/'MC_KHARAR'/'MC_ZIRAKPUR'/'UNKNOWN'); extending that enum is a deliberate later step, not done here. Rule 1(ii) of the source states these rules 'come into force from the date of publication in the official gazette' -- the exact gazette publication date is not given verbatim in the text beyond the notification order date (25/7/2017) and a per-page 'Uploaded on 27-07-2017' stamp; version/effective_from use the notification date, not the upload stamp, and this gap should be closed against the actual gazette notification before the rule pack's effective-date logic is trusted. Supersedes the Punjab Capital (Development and Regulation Building) Rules, 1952 (clause 15) -- if that 1952 text is ever ingested too, its rules must be marked effective_to 2017-07-25, never left overlapping. Clause 2(vi): 'Where these rules are silent or ambiguous the provisions of National Building Code/ Model Building Bye Laws-2016 and Chandigarh Master Plan - 2031 shall prevail' -- this makes NBC/MBBL 2016 an incorporated-by-reference fallback for THIS jurisdiction specifically (different from CLAUDE.md's general default that a 'reference' doc can never be the sole basis for a violation) and should inform how that doc_type rule is applied once a rule pack exists for this authority."
     }
   ]
 }

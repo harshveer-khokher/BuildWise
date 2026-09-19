@@ -1020,3 +1020,80 @@ Left as a standalone module for whoever adds that step.
   orphan list dropped from 15 numeric clauses to 3 — the 3 remaining are genuinely out of this
   pack's scope: manholes/absorption-pits drainage clauses and the IT-park FSI relaxation clause)
 - `tests/test_rules_engine.py` (new, 16 tests)
+
+## Second jurisdiction: Chandigarh corpus ingest, step 1 of N (2026-09-20)
+
+User confirmed Mohali/GMADA work is done for now and asked to move to Chandigarh as a **second,
+separate jurisdiction** -- explicit instruction: this must not interfere with the Mohali/PUDA
+pipeline or the frontend in any way. This entry covers only corpus ingest (CLAUDE.md §6.1/§6.2),
+the first of several planned steps -- no rule pack, no schema change, no engine/API/frontend
+change yet.
+
+**What was added, all purely additive:**
+- `corpus/raw/chandigarh_building_rules_urban_2017.pdf` -- the actual source PDF (user pasted it
+  directly into `corpus/raw/`, not reconstructed from chat text -- deliberately asked for the
+  real file rather than re-typing 123 pages of dense numeric tables from the conversation
+  transcript, since a citation-anchored pipeline shouldn't run against a hand-reconstructed
+  approximation of its own source of truth).
+- `corpus/MANIFEST.json` -- new entry, `doc_type: base_rules`, sha256-anchored. Notes field flags
+  two things worth reading before the rule-pack step: (1) this introduces a jurisdiction/authority
+  value ("Chandigarh") that doesn't exist yet in the frozen `Jurisdiction.authority` enum
+  (`GMADA`/`MC_KHARAR`/`MC_ZIRAKPUR`/`UNKNOWN`) -- extending that enum is a deliberate future step
+  per CLAUDE.md §4's "announce before touching schema," not done here; (2) clause 2(vi) of this
+  document makes NBC/MBBL-2016 an *incorporated-by-reference fallback* for this jurisdiction
+  specifically ("where these rules are silent... NBC/MBBL-2016... shall prevail") -- different
+  from CLAUDE.md §6.8's general rule that a `reference`-type doc can never be the sole basis for
+  a violation; worth resolving explicitly when a Chandigarh rule pack gets authored, not silently
+  defaulting to the general rule.
+- `tools/extract.py` -- added `chunk_clauses_chandigarh()` + `_chandigarh_locate_top_headings()`,
+  dispatched **only** for `doc_id == "chandigarh_building_rules_urban_2017"` (checked: `git
+  status` after re-running `python tools/coverage.py` on all 5 docs shows the 4 existing
+  `REPORT.md` files byte-identical -- confirmed non-interference, not just assumed). The existing
+  `chunk_clauses()` (PUDA-tuned) is untouched.
+  - **Why a separate chunker at all**: this document's numbering is far more heterogeneous than
+    the other four -- top-level sections are bare "N HEADING" with no period (sometimes spaced
+    letter-by-letter, e.g. "D E F I N I T I O N S", "1 0   M I S C E L L A N E O U S..."), clause
+    3's ~95 definitions restart numbering at "1)" without decimal anchors, and real sub-clauses
+    use ordinary dotted decimals (4.1, 11.1.1, 12.2.7) that also appear as page-reference numbers
+    in the Table of Contents. CLAUDE.md §6.2 says explicitly to write the chunking regex against
+    the real document rather than force one pattern across all of them -- confirmed necessary by
+    trying the existing regex first: it produced ~40 spurious "repeated number" anomalies before
+    any rework, because table "Sr. No" columns and clause-3 definitions are structurally
+    indistinguishable from top-level clause markers by local pattern alone.
+  - Top-level sections (1-15) are located by whitespace/punctuation-insensitive substring search
+    against known heading text taken from the document's own Table of Contents, not a regex --
+    the ONLY reliable way found to handle the inconsistent letter-spacing. Sub-clauses (dotted
+    decimals) use a real per-line regex, since that pattern doesn't collide with table data.
+  - Three real bugs found and fixed during this work (all covered by
+    `tests/test_extract_chandigarh.py`): (1) sub-headings split across two lines ("4.2\nResidential
+    (GROUP HOUSING)") were originally missed entirely, silently merging 4.2 into 4.1's text; (2) a
+    high-tension clearance-zone table row ("High voltage lines above 11 KV...") was matched as a
+    fake sub-clause "11.50", stealing the rest of that table away from the real clause 11.2.3 --
+    fixed with a plausibility bound (no real sub-clause in this document nests past a low single
+    digit) and the rejection is now logged as an anomaly rather than silently dropped or silently
+    wrong; (3) heading extraction was splitting on any hyphen, truncating "Re-Validation of
+    Building Plans" down to "Re" -- fixed to only trim a trailing ":-"/":"/"." suffix.
+  - One known, documented gap left as-is rather than chased down: clause "12.2 PROVISIONS FOR HIGH
+    RISE DEVELOPMENT" has no entry of its own because the source PDF itself typesets its heading
+    malformed ("12 . 2PROV ISIONS...") -- its brief intro folds into 12.1's text; its numbered
+    children (12.2.1-12.2.7) are captured correctly and unaffected. Recorded as an anomaly in
+    `REPORT.md`, not silently missing.
+- `corpus/extracted/chandigarh_building_rules_urban_2017/{clauses.jsonl,extract_health.json,
+  REPORT.md,pages/}` -- 88 clauses, 4 genuinely-blank OCR-flagged pages (verified by hand, not
+  scans -- just blank divider pages in the original), 2 anomalies (both documented above), 33
+  orphan clauses with numeric content flagged as the rule-authoring to-do list (0 rules reference
+  this doc yet -- expected and correct at this stage, same as CLAUDE.md's own description of
+  Stage 0/early Stage 1 for any freshly-ingested document).
+- `tests/test_extract_chandigarh.py` (new, 5 tests) -- regression guards for the three bugs above
+  plus a top-level/annexure completeness check and a duplicate-clause-id check.
+
+**Verified non-interference**: full suite 109/109 (104 pre-existing + 5 new) after this work;
+`git status` confirms the four existing corpus documents' extracted output is byte-identical to
+before. Nothing under `packages/rules/`, `packages/api/`, or `web/` was touched.
+
+**Not done yet** (future steps in this jurisdiction's onboarding, not started): table
+transcription (§6.3, needs a two-pass vision transcription like PUDA's), rule synthesis + verify
+(§6.4/§6.5, `tools/transcribe.py`/`tools/verify.py`), a `chandigarh_2017.yaml` rule pack, extending
+`Jurisdiction.authority` to include a Chandigarh value, and any engine/API/frontend wiring to
+actually let a user select Chandigarh as a jurisdiction. None of these were requested yet --
+this entry covers ingest only, per the user's own "this is the first step."

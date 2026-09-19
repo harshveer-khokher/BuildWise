@@ -190,6 +190,248 @@ def chunk_clauses(doc: fitz.Document, doc_id: str, page_info: list[dict]) -> tup
     return clauses, anomalies
 
 
+_NORM_STRIP_RE = re.compile(r"[^A-Z0-9]")
+
+
+def _norm_key(s: str) -> str:
+    return _NORM_STRIP_RE.sub("", s.upper())
+
+
+CHANDIGARH_DOC_ID = "chandigarh_building_rules_urban_2017"
+
+# Pages 0-3 (0-indexed) are the Table of Contents -- detected by direct inspection of this
+# specific PDF (dot-leader lines, e.g. "TITLE AND EXTENT .......... 4"); the real body text,
+# including the operative "1 TITLE AND EXTENT" heading, starts at page index 4. Starting the
+# search here (not at page 0) is what stops every top-level number from also matching its own
+# ToC entry.
+CHANDIGARH_BODY_START_PAGE = 4
+
+# (number, a distinctive heading fragment) for each of the document's own top-level numbered
+# sections (1-15), taken verbatim from its own Table of Contents. Matched below by stripping all
+# whitespace/punctuation from both the key and the body text before comparing, because the PDF
+# renders several of these headings letter-spaced and inconsistently
+# ("D E F I N I T I O N S", "1 0   M I S C E L L A N E O U S REQUIREMENTS...") -- whitespace-
+# insensitive substring search is the only reliable way to find them without hardcoding every
+# spacing variant by hand.
+CHANDIGARH_TOP_HEADINGS: list[tuple[str, str]] = [
+    ("1", "TITLE AND EXTENT"),
+    ("2", "SCOPE AND APPLICABILITY"),
+    ("3", "DEFINITIONS"),
+    ("4", "RESIDENTIAL USE"),
+    ("5", "COMMERCIAL USE"),
+    ("6", "INDUSTRIAL USE"),
+    ("7", "PUBLIC/ SEMI PUBLIC BUILDINGS"),
+    ("8", "I.T HABITAT"),
+    ("9", "INTEGRATED PROJECTS"),
+    ("10", "MISCELLANEOUS REQUIREMENTS FOR CONSTRUCTION OF ANY BUILDING"),
+    ("11", "PROCEDURE FOR MAKING APPLICATION FOR APPROVAL OF BUILDING PLAN"),
+    ("12", "MANDATORY PROVISIONS"),
+    ("13", "GREEN BUILDINGS AND SUSTAINABILITY PROVISIONS"),
+    ("14", "POWER OF RELAXATION"),
+    ("15", "REPEAL & SAVINGS"),
+]
+
+# After clause 15 the document continues with unnumbered Annexures (Forms, the Solar
+# Photovoltaic notification, Sanitation Requirements). These never received their own 1-15
+# numbering from the source, so inventing numbers for them would misrepresent the document --
+# they get their own non-numeric top-level clause_ids instead of being folded into clause 15.
+CHANDIGARH_ANNEXURE_HEADINGS: list[tuple[str, str]] = [
+    ("annexure-1", "ANNEXURE 1"),
+    ("annexure-2", "ANNEXURE-2"),
+    ("annexure-3", "ANNEXURE -3"),
+]
+
+# Sub-clauses use ordinary dotted decimal numbering (4.1, 11.1.1, 12.2.3) that essentially never
+# collides with the "Sr. No" table columns scattered everywhere else in this document (those are
+# always bare single integers) -- this is the one numbering convention in the whole document
+# that's reliable to match with a plain per-line regex. The PDF frequently breaks a sub-heading
+# across two lines the same way the generic chunker already handles for top-level numbers
+# elsewhere in this file ("4.2\nResidential (GROUP HOUSING)") -- both the same-line and the
+# split-across-two-lines forms are handled by the scan loop below, not by this regex alone.
+CHANDIGARH_SUBCLAUSE_MARKER = re.compile(r"^(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+(\S.*)$")
+CHANDIGARH_SUBCLAUSE_NUMBER_ONLY = re.compile(r"^(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s*$")
+
+
+def _chandigarh_locate_top_headings(lines: list[tuple[int, str]]) -> list[tuple[str, str, int]]:
+    """Returns (number_or_annexure_id, heading, start_line_index) for each top-level section, in
+    document order, via whitespace/punctuation-insensitive substring search (see
+    CHANDIGARH_TOP_HEADINGS docstring) rather than a per-line regex."""
+    norm_lines = [_norm_key(line) for _, line in lines]
+    cum = [0]
+    for nl in norm_lines:
+        cum.append(cum[-1] + len(nl))
+    joined = "".join(norm_lines)
+
+    def line_index_at(pos: int) -> int:
+        lo, hi = 0, len(cum) - 1
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if cum[mid] <= pos:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+
+    results: list[tuple[str, str, int]] = []
+    search_from = 0
+    for num, heading in CHANDIGARH_TOP_HEADINGS:
+        key = _norm_key(num + heading[:24])
+        idx = joined.find(key, search_from)
+        if idx == -1:
+            continue  # surfaced as a missing-section anomaly by the caller
+        results.append((num, heading, line_index_at(idx)))
+        search_from = idx + 1
+    for aid, heading in CHANDIGARH_ANNEXURE_HEADINGS:
+        key = _norm_key(heading)
+        idx = joined.find(key, search_from)
+        if idx == -1:
+            continue
+        results.append((aid, heading, line_index_at(idx)))
+        search_from = idx + 1
+    return results
+
+
+def chunk_clauses_chandigarh(doc, doc_id: str, page_info: list[dict]) -> tuple[list[dict], list[str]]:
+    """Chandigarh Building Rules (Urban) 2017 uses a different, more heterogeneous numbering
+    convention than the other corpus documents (see CHANDIGARH_TOP_HEADINGS/
+    CHANDIGARH_SUBCLAUSE_MARKER docstrings above) -- CLAUDE.md §6.2 says explicitly to write the
+    chunking regex against the real document rather than force-fit one pattern across all of
+    them, so this is a dedicated chunker for this doc_id only. chunk_clauses() above is untouched
+    and still handles every other document exactly as before.
+
+    Two-level output: one clause per numbered top-level section (1-15) or unnumbered Annexure,
+    plus a finer clause per dotted sub-heading (4.1, 11.1.1, ...) found within that section's own
+    span. Content between a section's heading and its first sub-heading -- or all of a section
+    that has no dotted sub-headings at all (clauses 1, 2, 14, 15) -- stays on the top-level
+    clause. This is where clause 3's ~95 numbered definitions and the "Note:" paragraphs under
+    clauses 4-9 end up, since the source never gives those their own decimal anchors either.
+    """
+    anomalies: list[str] = []
+    ocr_by_page = {p["page"]: p["ocr_required"] for p in page_info}
+
+    lines: list[tuple[int, str]] = []
+    for pageno in range(CHANDIGARH_BODY_START_PAGE, len(doc)):
+        for raw_line in doc[pageno].get_text().split("\n"):
+            line = raw_line.strip()
+            if line:
+                lines.append((pageno, line))
+
+    tops = _chandigarh_locate_top_headings(lines)
+    found_top_ids = {t[0] for t in tops}
+    for num, heading in CHANDIGARH_TOP_HEADINGS:
+        if num not in found_top_ids:
+            anomalies.append(
+                f"top-level section '{num} {heading}' was not located in the body text -- "
+                f"check whether its heading is spaced/formatted differently than expected."
+            )
+    for aid, heading in CHANDIGARH_ANNEXURE_HEADINGS:
+        if aid not in found_top_ids:
+            anomalies.append(f"unnumbered section '{heading}' was not located in the body text.")
+
+    if not tops:
+        anomalies.append("no top-level sections located at all -- chunker produced nothing.")
+        return [], anomalies
+
+    # Known source-PDF defect, verified by hand: clause "12.2 PROVISIONS FOR HIGH RISE
+    # DEVELOPMENT" is itself typeset in the source as "12 . 2PROV ISIONS FOR HIGH RISE
+    # DEVELOPMENT" (a stray space before the dot, and the run-on "2PROV"), which the sub-clause
+    # regex correctly does not match as "12.2" -- its own short intro line ends up folded into
+    # clause 12.1's trailing text instead of getting its own entry. Its children (12.2.1-12.2.7)
+    # are unaffected and are captured normally. Recorded here rather than silently disappearing.
+    anomalies.append(
+        "clause '12.2 PROVISIONS FOR HIGH RISE DEVELOPMENT' has no entry of its own: the source "
+        "PDF typesets its heading as '12 . 2PROV ISIONS...' (malformed spacing), which the "
+        "sub-clause matcher does not recognise. Its brief intro text is folded into clause "
+        "12.1's text instead. Its own numbered children (12.2.1-12.2.7) are captured correctly."
+    )
+
+    clauses: list[dict] = []
+    seen_numbers: dict[str, int] = {}
+
+    def make_clause(number: str, heading: str, start_line: int, end_line: int) -> None:
+        if start_line >= end_line:
+            return
+        seen_numbers[number] = seen_numbers.get(number, 0) + 1
+        occurrence = seen_numbers[number]
+        clause_number = number if occurrence == 1 else f"{number}#{occurrence}"
+        if occurrence > 1:
+            anomalies.append(
+                f"sub-clause number '{number}' matched more than once (occurrence {occurrence}) "
+                f"at page {lines[start_line][0]}; disambiguated as '{clause_number}'. Likely a "
+                f"cross-reference to another clause (e.g. 'as per Rule 10.1') that happened to "
+                f"start its own physical line -- verify against the source before treating both "
+                f"as independent clauses."
+            )
+        text_lines = [lines[i][1] for i in range(start_line, end_line)]
+        pages_covered = {lines[i][0] for i in range(start_line, end_line)}
+        clauses.append({
+            "clause_id": f"{doc_id}:{clause_number}",
+            "doc_id": doc_id,
+            "number": clause_number,
+            "heading": heading,
+            "text": " ".join(text_lines).strip(),
+            "page": lines[start_line][0],
+            "has_table": False,
+            "table_ref": None,
+            "ocr": any(ocr_by_page.get(p, False) for p in pages_covered),
+            "parent": doc_id,
+            "part": None,
+        })
+
+    for top_i, (number, heading, start_line) in enumerate(tops):
+        end_line = tops[top_i + 1][2] if top_i + 1 < len(tops) else len(lines)
+
+        sub_starts: list[tuple[str, str, int]] = []
+        if not number.startswith("annexure"):
+            li = start_line
+            while li < end_line:
+                line = lines[li][1]
+                m = CHANDIGARH_SUBCLAUSE_MARKER.match(line)
+                number_only_m = CHANDIGARH_SUBCLAUSE_NUMBER_ONLY.match(line)
+                sub_num, rest = None, None
+                if m:
+                    sub_num, rest = m.group(1), m.group(2)
+                elif (
+                    number_only_m
+                    and li + 1 < end_line
+                    and not CHANDIGARH_SUBCLAUSE_NUMBER_ONLY.match(lines[li + 1][1])
+                    and not CHANDIGARH_SUBCLAUSE_MARKER.match(lines[li + 1][1])
+                ):
+                    # Bare "4.2" on its own line -- heading text is the next line.
+                    sub_num, rest = number_only_m.group(1), lines[li + 1][1]
+                if sub_num is not None:
+                    segments = sub_num.split(".")
+                    # Guard against a sub-number belonging to a LATER top-level section leaking
+                    # in via a cross-reference inside this section's own prose, and against a
+                    # table numeric value (e.g. a clearance-distance table row rendering as
+                    # "11.50") being mistaken for a sub-clause -- no real sub-clause in this
+                    # document goes past a second/third segment in the low single digits (the
+                    # deepest confirmed real one is 12.2.7), so an implausibly large segment is
+                    # table data, not a heading.
+                    plausible = all(int(s) <= 20 for s in segments[1:])
+                    if segments[0] == number and plausible:
+                        sub_heading = rest.strip().rstrip(":-.").strip()
+                        sub_starts.append((sub_num, sub_heading, li))
+                    elif segments[0] == number and not plausible:
+                        anomalies.append(
+                            f"rejected implausible sub-clause number '{sub_num}' at page "
+                            f"{lines[li][0]} (heading would have been {rest.strip()[:60]!r}) -- "
+                            f"almost certainly a table value, not a real heading."
+                        )
+                li += 1
+
+        if not sub_starts:
+            make_clause(number, heading, start_line, end_line)
+            continue
+
+        make_clause(number, heading, start_line, sub_starts[0][2])
+        for sub_i, (sub_num, sub_heading, sub_start) in enumerate(sub_starts):
+            sub_end = sub_starts[sub_i + 1][2] if sub_i + 1 < len(sub_starts) else end_line
+            make_clause(sub_num, sub_heading, sub_start, sub_end)
+
+    return clauses, anomalies
+
+
 def ingest_one(doc_meta: dict) -> dict:
     doc_id = doc_meta["doc_id"]
     raw_path = ROOT / doc_meta["raw_path"]
@@ -207,7 +449,10 @@ def ingest_one(doc_meta: dict) -> dict:
 
     doc = fitz.open(str(raw_path))
     page_info = probe_and_rasterize(doc, out_dir)
-    clauses, anomalies = chunk_clauses(doc, doc_id, page_info)
+    if doc_id == CHANDIGARH_DOC_ID:
+        clauses, anomalies = chunk_clauses_chandigarh(doc, doc_id, page_info)
+    else:
+        clauses, anomalies = chunk_clauses(doc, doc_id, page_info)
     doc.close()
 
     clauses_path = out_dir / "clauses.jsonl"
