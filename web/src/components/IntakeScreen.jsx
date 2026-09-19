@@ -3,14 +3,16 @@ import { assembleCase, listJurisdictions, uploadModel } from "../api";
 import { mergeSynthesizedPlot } from "../lib/geometry";
 import { FIXTURES } from "../fixtures";
 import PlotSizeInput from "./PlotSizeInput";
-import SheetUploadGrid from "./SheetUploadGrid";
+import FileUploadZone from "./FileUploadZone";
 import SampleDrawingPicker from "./SampleDrawingPicker";
-
-const EMPTY_SHEETS = {};
 
 /** The whole intake workflow in one compact view: Location -> Plot information -> Building plan
  * upload -> "Check my plan". A separate, clearly-labeled sample-drawing shortcut sits alongside
- * it for a full-result demo path (design brief scope #1-3). */
+ * it for a full-result demo path (design brief scope #1-3).
+ *
+ * Upload is a single generic multi-file drop zone (POST /cases/assemble infers each file's role
+ * from its own content) rather than a named slot per sheet role — the user drops everything they
+ * have and finds out afterwards what was used for what. */
 export default function IntakeScreen({ onModelReady }) {
   const [jurisdictions, setJurisdictions] = useState(null);
   const [jurisdictionsError, setJurisdictionsError] = useState(null);
@@ -20,8 +22,7 @@ export default function IntakeScreen({ onModelReady }) {
   const [length, setLength] = useState("");
   const [unit, setUnit] = useState("m");
 
-  const [sheets, setSheets] = useState(EMPTY_SHEETS);
-  const [fileErrors, setFileErrors] = useState({});
+  const [files, setFiles] = useState([]);
 
   const [fixtureId, setFixtureId] = useState(FIXTURES[0].id);
 
@@ -46,20 +47,10 @@ export default function IntakeScreen({ onModelReady }) {
   }, []);
 
   const jurisdiction = jurisdictions?.find((j) => j.id === jurisdictionId) || null;
-  const hasAnySheet = useMemo(() => Object.values(sheets).some(Boolean), [sheets]);
+  const hasAnySheet = useMemo(() => files.length > 0, [files]);
   const widthNum = Number(width);
   const lengthNum = Number(length);
   const plotSizeValid = width !== "" && length !== "" && widthNum > 0 && lengthNum > 0;
-
-  function setSheet(role, file, errorMessage) {
-    setSheets((prev) => {
-      const next = { ...prev };
-      if (file) next[role] = file;
-      else delete next[role];
-      return next;
-    });
-    setFileErrors((prev) => ({ ...prev, [role]: errorMessage }));
-  }
 
   const validationMessages = [];
   if (jurisdictionsError) {
@@ -71,20 +62,37 @@ export default function IntakeScreen({ onModelReady }) {
     validationMessages.push("Enter the plot width and length.");
   }
   if (!hasAnySheet) {
-    validationMessages.push("Upload a building plan to continue.");
+    validationMessages.push("Upload at least one building plan file to continue.");
   }
-  const hasBlockingFileError = Object.values(fileErrors).some(Boolean);
 
-  const canSubmit = validationMessages.length === 0 && !hasBlockingFileError && !busy;
+  const canSubmit = validationMessages.length === 0 && !busy;
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setBusy(true);
     setSubmitError(null);
     try {
-      const model = await assembleCase(sheets, jurisdiction.authority);
-      const merged = mergeSynthesizedPlot(model, width, length, unit);
-      onModelReady(merged, "Your uploaded drawing");
+      const { model, resolved_roles: resolvedRoles, unresolved } = await assembleCase(
+        files,
+        jurisdiction.authority,
+      );
+      // Unresolved files affect what data the check ran against, so they're recorded as
+      // assumptions too — that's the one channel guaranteed to reach the exported report as well
+      // as the on-screen results (CLAUDE.md §5: assumptions are "printed verbatim on the
+      // report"). Which files WERE used is shown in the dedicated file-outcomes panel on the
+      // results screen instead of cluttering this list with routine successes.
+      const unresolvedAssumptions = (unresolved || []).map(
+        (u) => `Uploaded file "${u.filename}" was not used: ${u.reason}`,
+      );
+      const withAssumptions = {
+        ...model,
+        assumptions: [...(model.assumptions || []), ...unresolvedAssumptions],
+      };
+      const merged = mergeSynthesizedPlot(withAssumptions, width, length, unit);
+      onModelReady(merged, "Your uploaded drawing", {
+        resolvedRoles: resolvedRoles || {},
+        unresolved: unresolved || [],
+      });
     } catch (err) {
       setSubmitError(String(err.message || err));
     } finally {
@@ -163,13 +171,17 @@ export default function IntakeScreen({ onModelReady }) {
           />
         </li>
 
-        <li className="intake-card">
+        <li className="intake-card intake-card--full">
           <div className="intake-card__head">
             <span className="intake-card__index">3</span>
             <h3>Building plan</h3>
           </div>
-          <p className="hint">Accepted formats: .pdf, .dxf.</p>
-          <SheetUploadGrid sheets={sheets} onSetSheet={setSheet} fileErrors={fileErrors} />
+          <p className="hint">
+            Drop in whatever sheets you have — ground/upper floor plans, section, elevations, site
+            plan. No need to label anything; each file's role is read from the file itself once
+            you submit, and you'll see what was used for what.
+          </p>
+          <FileUploadZone files={files} onChange={setFiles} disabled={busy} />
         </li>
       </ol>
 

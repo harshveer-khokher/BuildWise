@@ -69,13 +69,19 @@ export function uploadModel(buildingModel) {
   }).then(asJson);
 }
 
-/** POST /cases/assemble — the real multi-file, role-tagged drawing upload.
- * `sheets` is a { role: File } map; `authority` is the selected jurisdiction's authority code
- * (e.g. "GMADA"). */
-export function assembleCase(sheets, authority) {
+/** POST /cases/assemble — the real multi-file drawing upload. `files` is a plain array (or
+ * FileList) of File objects, all sent under the repeated "files" field with no role declared —
+ * the backend infers each file's role from its own content (title block for PDFs, filename for
+ * DXF) and reports what it did. `authority` is the selected jurisdiction's authority code (e.g.
+ * "GMADA").
+ *
+ * Resolves to `{ model: BuildingModel, resolved_roles: {filename: role}, unresolved: [{filename,
+ * reason}, ...] }` — a file in `unresolved` was not used in assembly; the caller is responsible
+ * for surfacing that (CLAUDE.md §1 rule 6: unknown, never silently dropped). */
+export function assembleCase(files, authority) {
   const form = new FormData();
-  for (const [role, file] of Object.entries(sheets)) {
-    if (file) form.append(role, file);
+  for (const file of files) {
+    form.append("files", file);
   }
   form.append("authority", authority);
   return fetch(`${API_BASE}/cases/assemble`, {

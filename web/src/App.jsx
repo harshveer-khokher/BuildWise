@@ -22,15 +22,17 @@ export default function App() {
   const [step, setStep] = useState("intake"); // intake | confirm | loading | results | error
   const [model, setModel] = useState(null);
   const [caseLabel, setCaseLabel] = useState("");
+  const [fileAssembly, setFileAssembly] = useState(null);
   const [checksResult, setChecksResult] = useState(null);
   const [reportMarkdown, setReportMarkdown] = useState(null);
   const [overlay, setOverlay] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [retryToken, setRetryToken] = useState(0);
 
-  function handleModelReady(loadedModel, label) {
+  function handleModelReady(loadedModel, label, assemblyInfo = null) {
     setModel(loadedModel);
     setCaseLabel(label);
+    setFileAssembly(assemblyInfo);
     setStep(needsConfirmation(loadedModel) ? "confirm" : "loading");
   }
 
@@ -42,6 +44,7 @@ export default function App() {
   function restart() {
     setModel(null);
     setCaseLabel("");
+    setFileAssembly(null);
     setChecksResult(null);
     setReportMarkdown(null);
     setOverlay(null);
@@ -92,13 +95,15 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            ▦
-          </span>
-          <span className="brand-name">BuildWise</span>
+        <div className="app-header__brand">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true">
+              ▦
+            </span>
+            <span className="brand-name">BuildWise</span>
+          </div>
+          <p className="brand-tagline">Build with confidence.</p>
         </div>
-        <p className="brand-tagline">Build with confidence.</p>
         {step !== "results" && (
           <nav className="steps" aria-label="Progress">
             {STEPS.map((label, i) => (
@@ -145,6 +150,7 @@ export default function App() {
           <ResultsScreen
             model={model}
             caseLabel={caseLabel}
+            fileAssembly={fileAssembly}
             checksResult={checksResult}
             reportMarkdown={reportMarkdown}
             overlay={overlay}

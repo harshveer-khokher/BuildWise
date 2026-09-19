@@ -1,13 +1,17 @@
 import { summarizeCounts } from "../lib/findings";
+import { roleLabel } from "../lib/roles";
+import { FileUsageBadge } from "./StatusBadge";
 import FindingsAccordion from "./FindingsAccordion";
 import ReportPanel from "./ReportPanel";
 import OverlaySvg from "./OverlaySvg";
 
 /** Results hierarchy per the design brief: overall factual counts (never a fabricated score),
- * then the findings accordion, then assumptions (always shown verbatim), then the report. */
+ * then the findings accordion, then file outcomes and assumptions (always shown verbatim), then
+ * the report. */
 export default function ResultsScreen({
   model,
   caseLabel,
+  fileAssembly,
   checksResult,
   reportMarkdown,
   overlay,
@@ -15,6 +19,9 @@ export default function ResultsScreen({
 }) {
   const { summary, engine_source: engineSource, engine_error: engineError, findings } = checksResult;
   const counts = summarizeCounts(findings);
+  const resolvedEntries = fileAssembly ? Object.entries(fileAssembly.resolvedRoles || {}) : [];
+  const unresolvedEntries = fileAssembly?.unresolved || [];
+  const hasFileOutcomes = resolvedEntries.length > 0 || unresolvedEntries.length > 0;
 
   return (
     <section className="screen results">
@@ -65,6 +72,36 @@ export default function ResultsScreen({
         </p>
         <FindingsAccordion findings={findings} />
       </div>
+
+      {hasFileOutcomes && (
+        <div className="section-block">
+          <h3>Files used in this check</h3>
+          <p className="hint">
+            Each uploaded file's role was read from the file itself. A file marked "Not used"
+            wasn't guessed at — it's left out and explained here rather than silently dropped.
+          </p>
+          <ul className="file-outcomes">
+            {resolvedEntries.map(([filename, role]) => (
+              <li className="file-outcome" key={filename}>
+                <div className="file-outcome__row">
+                  <span className="file-outcome__name">{filename}</span>
+                  <FileUsageBadge used />
+                  <span className="hint">{roleLabel(role)}</span>
+                </div>
+              </li>
+            ))}
+            {unresolvedEntries.map((u) => (
+              <li className="file-outcome" key={u.filename}>
+                <div className="file-outcome__row">
+                  <span className="file-outcome__name">{u.filename}</span>
+                  <FileUsageBadge used={false} />
+                </div>
+                <p className="file-outcome__reason">{u.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {model.assumptions?.length > 0 && (
         <div className="section-block assumptions-block">

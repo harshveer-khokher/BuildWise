@@ -3,9 +3,9 @@
    deliberate transitions only (no floaty/parallax/particle animation). */
 
 .app-shell {
-  max-width: 880px;
+  max-width: 1220px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 32px;
   width: 100%;
   flex: 1;
   display: flex;
@@ -13,43 +13,53 @@
 }
 
 /* ---------------------------------------------------------------------------------------- */
-/* Header                                                                                    */
+/* Header — allowed to breathe: bigger type, more air, and on wide screens a row layout that */
+/* doesn't have to match the narrower form width below it.                                   */
 /* ---------------------------------------------------------------------------------------- */
 
 .app-header {
-  padding: 40px 0 24px;
+  padding: 64px 0 40px;
   border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px 40px;
+}
+
+.app-header__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .brand {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 14px;
 }
 
 .brand-mark {
-  font-size: 20px;
+  font-size: 30px;
   color: var(--accent);
   line-height: 1;
 }
 
 .brand-name {
   font-family: var(--serif);
-  font-size: 28px;
+  font-size: 44px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .brand-tagline {
-  margin-top: 4px;
   color: var(--ink-soft);
-  font-size: 15px;
+  font-size: 18px;
 }
 
 .steps {
   display: flex;
   gap: 8px;
-  margin-top: 24px;
   flex-wrap: wrap;
 }
 
@@ -230,6 +240,15 @@ input[type="file"] {
   opacity: 0.5;
 }
 
+/* A <label> styled as a button (the file-picker trigger) has no native disabled attribute, so
+   the disabled look is a class instead — paired with a real disabled attribute on the input it
+   points at. */
+.button--disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .actions {
   display: flex;
   gap: 12px;
@@ -240,25 +259,38 @@ input[type="file"] {
 /* Intake screen                                                                             */
 /* ---------------------------------------------------------------------------------------- */
 
-.intake-header h2 {
-  font-size: 30px;
-  margin-top: 6px;
+.intake-header {
+  max-width: 74ch;
 }
 
+.intake-header h2 {
+  font-size: 34px;
+  margin-top: 8px;
+}
+
+/* Desktop: Location and Plot information sit side by side; Building plan (the upload area, which
+   needs more horizontal room for the file list) spans the full width beneath. This is what
+   actually uses the wider shell — not stretching individual inputs, just better grouping and
+   whitespace. Collapses to a single stacked column at the 900px breakpoint below. */
 .intake-steps {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.intake-card--full {
+  grid-column: 1 / -1;
 }
 
 .intake-card {
   border: 1px solid var(--line);
   background: var(--paper-raised);
   border-radius: 10px;
-  padding: 20px 22px;
+  padding: 24px 26px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -316,75 +348,127 @@ input[type="file"] {
   padding: 14px 16px;
 }
 
-.sheet-groups {
+.file-upload {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
-.sheet-group {
-  border: none;
-  border-top: 1px solid var(--line);
-  padding: 14px 0 0;
-  margin: 0;
-}
-
-.sheet-group legend {
-  font-size: 13.5px;
-  font-weight: 600;
-  padding: 0;
-  color: var(--ink);
-}
-
-.sheet-slots {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.sheet-slot {
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  padding: 12px;
+.file-dropzone {
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 10px;
+  padding: 36px 24px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
   background: var(--paper);
   transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.sheet-slot--filled {
-  border-style: solid;
-  border-color: var(--pass);
-  background: var(--pass-soft);
+.file-dropzone--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.sheet-slot__label {
-  font-size: 13px;
-  font-weight: 600;
+.file-dropzone__icon {
+  font-size: 28px;
+  color: var(--ink-faint);
 }
 
-.sheet-slot__control {
+.file-dropzone__text {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.file-dropzone__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-list__item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--paper-raised);
 }
 
-.sheet-slot__clear {
+.file-list__name {
+  flex: 1;
+  font-size: 13.5px;
+  word-break: break-all;
+}
+
+.file-list__size {
+  color: var(--ink-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.file-list__remove {
   border: none;
   background: none;
   color: var(--violation);
-  font-size: 12px;
-  text-decoration: underline;
-  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
 }
 
-.sheet-slot__filename {
-  font-size: 12px;
-  color: var(--ink-soft);
+.file-outcomes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-outcome {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-outcome:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.file-outcome__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.file-outcome__name {
+  font-weight: 500;
+  font-size: 14px;
   word-break: break-all;
+}
+
+.file-outcome__reason {
+  color: var(--ink-soft);
+  font-size: 13.5px;
 }
 
 .intake-submit {
@@ -872,6 +956,7 @@ input[type="file"] {
   padding: 24px 28px;
   background: var(--paper-raised);
   max-height: 560px;
+  max-width: 76ch;
   overflow-y: auto;
   font-size: 14.5px;
   line-height: 1.6;
@@ -952,17 +1037,36 @@ input[type="file"] {
 /* Responsive                                                                                */
 /* ---------------------------------------------------------------------------------------- */
 
+/* Tablet and below: the Location / Plot information two-column row stops fitting comfortably,
+   so it collapses to one stacked column (Building plan was already full-width). */
+@media (max-width: 900px) {
+  .intake-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .intake-card--full {
+    grid-column: 1;
+  }
+}
+
 @media (max-width: 640px) {
   .app-shell {
     padding: 0 16px;
   }
 
   .app-header {
-    padding-top: 28px;
+    padding: 28px 0 24px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
   }
 
   .brand-name {
-    font-size: 24px;
+    font-size: 26px;
+  }
+
+  .brand-tagline {
+    font-size: 15px;
   }
 
   .intake-header h2 {

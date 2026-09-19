@@ -1,53 +1,45 @@
 // Sheet-role vocabulary for the multi-file drawing upload (POST /cases/assemble).
 //
-// Field NAME = role, matching packages/parser/semantics.py's _PLAN_LEVELS / _SITE_ROLES /
-// _SECTION_ROLE exactly (verified against that file, not guessed). Grouped for the upload UI
-// per CLAUDE.md §10.1: a case is a sheet set, not one file — plan sheets carry footprints/rooms,
-// the section carries height (available nowhere else), site/zoning carries the plot + buildable
-// envelope, elevations are a storey-count cross-check only.
+// The upload UI no longer asks the user to declare a role per file — every file goes in under
+// the repeated "files" field and the backend infers the role itself from the file's own content
+// (packages/api/role_inference.py reads the PDF title block; DXF falls back to filename, lower
+// trust). This module now only carries the label vocabulary needed to translate the raw role
+// string the backend returns (e.g. "ground", "elevation_front") into something a person reads
+// comfortably (e.g. "Ground floor plan"), plus the shared accepted-extension check used both to
+// filter the file picker and to reject drops client-side before they ever reach the network.
 
-export const SHEET_GROUPS = [
-  {
-    id: "plans",
-    label: "Floor plans",
-    hint: "One slot per level. Each optional — supply whichever levels this building has.",
-    roles: [
-      { role: "basement", label: "Basement" },
-      { role: "stilt", label: "Stilt" },
-      { role: "ground", label: "Ground floor" },
-      { role: "first", label: "First floor" },
-      { role: "second", label: "Second floor" },
-      { role: "third", label: "Third floor" },
-      { role: "fourth", label: "Fourth floor" },
-    ],
-  },
-  {
-    id: "site",
-    label: "Site / zoning plan",
-    hint: "Plot boundary and, where traced, the zoned (buildable) area — needed for containment, coverage and FAR.",
-    roles: [
-      { role: "site", label: "Site plan" },
-      { role: "zoning", label: "Zoning plan" },
-    ],
-  },
-  {
-    id: "section",
-    label: "Section",
-    hint: "The only sheet floor heights, total height and basement depth can be read from.",
-    roles: [{ role: "section", label: "Section" }],
-  },
-  {
-    id: "elevation",
-    label: "Elevations",
-    hint: "Cross-check only, for total height and storey count — never the primary height source.",
-    roles: [
-      { role: "elevation_front", label: "Front elevation" },
-      { role: "elevation_rear", label: "Rear elevation" },
-      { role: "elevation_side", label: "Side elevation" },
-      { role: "elevation", label: "Elevation (single sheet)" },
-    ],
-  },
-];
+export const ROLE_LABELS = {
+  basement: "Basement plan",
+  stilt: "Stilt plan",
+  ground: "Ground floor plan",
+  first: "First floor plan",
+  second: "Second floor plan",
+  third: "Third floor plan",
+  fourth: "Fourth floor plan",
+  site: "Site plan",
+  zoning: "Zoning plan",
+  section: "Section",
+  elevation: "Elevation",
+  elevation_front: "Front elevation",
+  elevation_rear: "Rear elevation",
+  elevation_side: "Side elevation",
+};
+
+/** Translates a raw role key returned by /cases/assemble into a friendly label. Elevation roles
+ * can arrive auto-numbered on collision (e.g. "elevation_2", CLAUDE.md-adjacent
+ * packages/api/role_inference.py's assign_roles) — those fall back to a humanized version of the
+ * key rather than an unlabeled raw string. */
+export function roleLabel(role) {
+  if (ROLE_LABELS[role]) return ROLE_LABELS[role];
+  const base = role.replace(/_\d+$/, "");
+  const suffix = role.match(/_(\d+)$/);
+  const baseLabel = ROLE_LABELS[base];
+  if (baseLabel && suffix) return `${baseLabel} (${suffix[1]})`;
+  return role
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export const ACCEPTED_EXTENSIONS = [".pdf", ".dxf"];
 

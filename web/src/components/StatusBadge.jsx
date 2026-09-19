@@ -27,6 +27,20 @@ export function ConfidenceBadge({ confidence }) {
   );
 }
 
+/** Whether an uploaded file was used in assembly, in the same dot+label visual language as
+ * StatusBadge — an unresolved file is exactly the "unknown, not a fake pass/fail" outcome
+ * described in CLAUDE.md §1 rule 6, so it borrows the same neutral gray treatment as a finding's
+ * `unknown` status rather than being styled as an error. */
+export function FileUsageBadge({ used }) {
+  const cssVar = used ? "--pass" : "--unknown";
+  return (
+    <span className="badge status-badge" style={{ "--badge-color": `var(${cssVar})` }}>
+      <span aria-hidden="true">{used ? "●" : "○"}</span>
+      {used ? "Used" : "Not used"}
+    </span>
+  );
+}
+
 const CITATION_STATUS_META = {
   verified: "Two independent transcription passes agreed exactly.",
   seed_unverified: "Transcribed but not yet independently confirmed against the gazette.",
