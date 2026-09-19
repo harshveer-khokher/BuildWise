@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import re as _re
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,13 @@ SQM_TO_SQYD = 1.196
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 _MANIFEST_PATH = Path(__file__).resolve().parents[2] / "corpus" / "MANIFEST.json"
 
+IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30), name="IST")
+"""India does not observe DST, so a fixed UTC+5:30 offset is exact year-round -- no zoneinfo/
+tzdata dependency needed (Windows has no bundled IANA tz database)."""
+
 _STATUS_ORDER = {"violation": 0, "ambiguity": 1, "unknown": 2, "advisory": 3, "pass": 4}
+_SEVERITY_ORDER = {"blocking": 0, "major": 1, "minor": 2}
+_SEVERITY_LABEL = {"blocking": "🔴 Blocking", "major": "🟠 Major", "minor": "🟡 Minor"}
 _STATUS_LABEL = {
     "violation": "🔴 Violation",
     "ambiguity": "🟠 Ambiguity",
@@ -64,7 +71,7 @@ def _report_context(model: BuildingModel, findings: list[Finding]) -> dict[str, 
     plot_area_sqm = model.plot_area_sqm
     return {
         "report_title": "mohali-check pre-submission report",
-        "generated_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "generated_at": _dt.datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
         "summary_line": summary_line(findings),
         "jurisdiction": model.jurisdiction,
         "plot_area_sqm": plot_area_sqm if plot_area_sqm is not None else "unknown",
@@ -192,26 +199,44 @@ def render_markdown(model: BuildingModel, findings: list[Finding]) -> str:
             groups[f.rule_id].append(f)
         return [groups[rid] for rid in order]
 
-    issue_groups = sorted(_group(issues), key=lambda g: _STATUS_ORDER[g[0].status])
+    def _heading_title(group: list[Finding]) -> str:
+        f0 = group[0]
+        titles = {f.title for f in group}
+        if len(titles) > 1:
+            # Titles differ only by a trailing "(front)"/"(floor 0)"-style qualifier -- show the
+            # shared prefix rather than one instance's qualifier standing in for all of them.
+            return _re.sub(r"\s*\([^()]*\)\s*$", "", f0.title).rstrip()
+        return f0.title
+
+    issue_groups = sorted(
+        _group(issues), key=lambda g: (_SEVERITY_ORDER.get(g[0].severity, 9), _STATUS_ORDER[g[0].status])
+    )
 
     lines.append(f"## Issues ({len(issues)})")
     lines.append("")
     if not issues:
         lines.append("*None — every enforced check either passed or could not be evaluated (see Bylaws checked above for what was actually run).*")
         lines.append("")
-    import re as _re
+
+    # --- Compact severity summary, before the detailed cards --------------------------------
+    if issue_groups:
+        lines.append("**At a glance, most severe first:**")
+        lines.append("")
+        lines.append("| Severity | Count | Issues |")
+        lines.append("|---|---|---|")
+        by_severity: dict[str, list[list[Finding]]] = {}
+        for group in issue_groups:
+            by_severity.setdefault(group[0].severity, []).append(group)
+        for severity in sorted(by_severity, key=lambda s: _SEVERITY_ORDER.get(s, 9)):
+            groups = by_severity[severity]
+            titles = ", ".join(_heading_title(g) for g in groups)
+            lines.append(f"| {_SEVERITY_LABEL.get(severity, severity)} | {len(groups)} | {titles} |")
+        lines.append("")
 
     for group in issue_groups:
         f0 = group[0]
         title_doc = doc_titles.get(f0.citation.doc, {}).get("title", f0.citation.doc)
-        titles = {f.title for f in group}
-        if len(titles) > 1:
-            # Titles differ only by a trailing "(front)"/"(floor 0)"-style qualifier -- show the
-            # shared prefix in the header rather than one instance's qualifier standing in for
-            # all of them; the per-instance table below still shows each one in full.
-            heading_title = _re.sub(r"\s*\([^()]*\)\s*$", "", f0.title).rstrip()
-        else:
-            heading_title = f0.title
+        heading_title = _heading_title(group)
         count_suffix = f" — {len(group)} instances" if len(group) > 1 else ""
         lines.append(f"### {_STATUS_LABEL[f0.status]} — {heading_title}{count_suffix}")
         lines.append("")
