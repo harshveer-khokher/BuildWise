@@ -225,7 +225,8 @@ def test_report_markdown_route():
 
 def test_cases_assemble_with_synth_dxf():
     """Uses the committed synth smoke DXF (real drawings under packages/cases/real/ are
-    gitignored per CLAUDE.md §10.7, so a portable fixture is needed here)."""
+    gitignored per CLAUDE.md §10.7, so a portable fixture is needed here). Explicit role field
+    name -- the backward-compatible, programmatic path."""
     with open(SYNTH_DXF, "rb") as f:
         resp = client.post(
             "/cases/assemble",
@@ -233,10 +234,12 @@ def test_cases_assemble_with_synth_dxf():
             data={"authority": "GMADA"},
         )
     assert resp.status_code == 200, resp.text
-    model = resp.json()
+    body = resp.json()
+    model = body["model"]
     assert model["jurisdiction"]["authority"] == "GMADA"
     assert len(model["floors"]) >= 1
     assert model["floors"][0]["level"] == 0
+    assert body["unresolved"] == []
 
 
 def test_cases_assemble_requires_at_least_one_file():
@@ -250,6 +253,71 @@ def test_cases_assemble_rejects_unsupported_file_type():
         files={"ground": ("notes.txt", b"not a drawing", "text/plain")},
     )
     assert resp.status_code == 422
+
+
+def _make_pdf_with_title(sheet_title: str) -> bytes:
+    """A minimal one-page PDF whose text layer contains a TITLE:- line, for exercising
+    role_inference.guess_role() without depending on any gitignored real drawing."""
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), f"TITLE:- {sheet_title}\nDATE:- 2026-01-01")
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_cases_assemble_auto_infers_role_from_pdf_title_block():
+    """The normal path: files uploaded under the generic "files" field, with no role declared
+    by the caller at all -- role_inference reads each PDF's own title block."""
+    pdf_bytes = _make_pdf_with_title("GROUND FLOOR PLAN")
+    resp = client.post(
+        "/cases/assemble",
+        files={"files": ("my_drawing.pdf", pdf_bytes, "application/pdf")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["resolved_roles"] == {"my_drawing.pdf": "ground"}
+    assert body["unresolved"] == []
+    # This synthetic fixture has no vector geometry or dimension text, so pdf_ingest correctly
+    # can't extract a usable footprint (covered by tests/test_parser.py) -- what this test
+    # checks is role_inference's wiring, i.e. that "ground" was the role handed to assemble_case
+    # at all, not footprint-extraction accuracy.
+    assert body["model"]["jurisdiction"]["authority"] == "GMADA"
+
+
+def test_cases_assemble_reports_unclassifiable_file_instead_of_guessing():
+    """A DXF's role can only be filename-inferred (no title-block reader for DXF), and a
+    filename with no recognizable keyword must be reported unresolved, never silently
+    assigned a role or silently dropped."""
+    with open(SYNTH_DXF, "rb") as f:
+        resp = client.post(
+            "/cases/assemble",
+            files={"files": ("s_smoke.dxf", f, "application/octet-stream")},
+        )
+    assert resp.status_code == 400  # nothing resolved -> no usable sheets at all
+    assert "recognizable" in resp.json()["detail"].lower()
+
+
+def test_cases_assemble_auto_infer_yields_to_explicit_override():
+    """If a role is both auto-guessed and explicitly provided, the explicit one wins and the
+    auto-guessed file is reported, not silently discarded."""
+    pdf_bytes = _make_pdf_with_title("GROUND FLOOR PLAN")
+    with open(SYNTH_DXF, "rb") as explicit_ground:
+        resp = client.post(
+            "/cases/assemble",
+            files={
+                "ground": ("explicit_ground.dxf", explicit_ground, "application/octet-stream"),
+                "files": ("auto_ground.pdf", pdf_bytes, "application/pdf"),
+            },
+            data={"authority": "GMADA"},
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["resolved_roles"] == {}  # the auto file's role lost to the explicit one
+    assert any(u["filename"] == "auto_ground.pdf" for u in body["unresolved"])
 
 
 def test_all_stubs_produce_a_report_without_error():

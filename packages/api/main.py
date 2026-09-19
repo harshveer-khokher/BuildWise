@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -203,7 +203,7 @@ async def upload(request: Request):
 
 @app.post("/cases/assemble", response_model=None)
 async def assemble_case_route(request: Request):
-    """Multi-file, role-tagged upload -> one BuildingModel, via Track A's real assembly logic
+    """General file upload -> one BuildingModel, via Track A's real assembly logic
     (packages.parser.semantics.assemble_case). This is the real gap identified during frontend
     scoping: /upload's JSON-only path exists because CLAUDE.md's own architecture treats a
     building as a *sheet set* (ground/first/second/elevations/site/section), never one file
@@ -211,14 +211,25 @@ async def assemble_case_route(request: Request):
     not new core logic -- it writes the uploaded files to a temp directory, synthesizes the
     meta.json assemble_case() already expects, and calls it unchanged.
 
-    multipart/form-data: every field whose value is a file is treated as one sheet, with the
-    field NAME as its role (e.g. a field named "ground" is the ground floor plan) -- roles match
-    packages.parser.semantics._PLAN_LEVELS / elevation* / site / zoning / section.
-    Plain text fields: "authority" (e.g. "GMADA", from the jurisdiction picked in the UI) and
-    optionally "rule_pack" to override the pack semantics.assemble_case defaults to.
+    multipart/form-data:
+      - repeated field named "files": any number of drawing files, role auto-inferred from each
+        file's own content (packages.api.role_inference) -- this is the normal path, so the user
+        never has to know or declare which sheet is which.
+      - any OTHER file field name that matches a known role (e.g. "ground", "elevation_front")
+        is treated as an explicit override for that role, taking precedence over auto-inference
+        -- kept for programmatic/API callers who already know their sheet roles.
+      - plain text fields: "authority" (e.g. "GMADA") and optionally "rule_pack" override.
+
+    Response: {"model": BuildingModel, "resolved_roles": {filename: role},
+               "unresolved": [{"filename", "reason"}, ...]}
+    A file that couldn't be classified is never silently dropped or guessed at -- it's reported
+    in "unresolved" so the user can see it wasn't used, same "unknown over fake precision"
+    principle as everywhere else in this project (CLAUDE.md §1 rule 6).
     """
     import tempfile
     from pathlib import Path
+
+    from packages.api.role_inference import RoleGuess, assign_roles, guess_role
 
     try:
         from packages.parser import semantics
@@ -229,14 +240,20 @@ async def assemble_case_route(request: Request):
         ) from exc
 
     form = await request.form()
-    sheets: dict[str, str] = {}
+    sheets: dict[str, str] = {}  # role -> temp filename, on disk under tmp_path
+    auto_uploads: list[tuple[str, Any]] = []  # (original_filename, UploadFile), field name "files"
     authority = None
     rule_pack = None
 
     with tempfile.TemporaryDirectory(prefix="buildwise_upload_") as tmpdir:
         tmp_path = Path(tmpdir)
+
         for field_name, value in form.multi_items():
             if hasattr(value, "read"):  # an UploadFile
+                if field_name == "files":
+                    auto_uploads.append((value.filename or f"upload_{len(auto_uploads)}", value))
+                    continue
+                # A field named after a specific role is an explicit override for that role.
                 filename = value.filename or f"{field_name}.pdf"
                 suffix = Path(filename).suffix.lower() or ".pdf"
                 if suffix not in (".pdf", ".dxf"):
@@ -252,10 +269,41 @@ async def assemble_case_route(request: Request):
             elif field_name == "rule_pack":
                 rule_pack = value
 
+        # Save every auto-upload to a safe temp filename and classify it from its own content.
+        original_to_safe: dict[str, str] = {}
+        guesses: dict[str, RoleGuess] = {}
+        for idx, (original_filename, upload_file) in enumerate(auto_uploads):
+            suffix = Path(original_filename).suffix.lower() or ".pdf"
+            if suffix not in (".pdf", ".dxf"):
+                guesses[original_filename] = RoleGuess(
+                    None, "filename",
+                    f"unsupported file type {suffix!r} (only .pdf and .dxf are ingested today)",
+                )
+                continue
+            safe_name = f"auto_{idx}{suffix}"
+            (tmp_path / safe_name).write_bytes(await upload_file.read())
+            original_to_safe[original_filename] = safe_name
+            guesses[original_filename] = guess_role(tmp_path / safe_name, original_filename)
+
+        auto_role_map, unresolved = assign_roles(guesses)  # role -> original_filename
+
+        resolved_roles: dict[str, str] = {}
+        for role, original_filename in auto_role_map.items():
+            if role in sheets:
+                # An explicit override for this role already won -- report the unused guess
+                # rather than silently dropping it (never guess past a stated conflict).
+                unresolved.append({
+                    "filename": original_filename,
+                    "reason": f"inferred as '{role}', but that role was already explicitly provided -- this file was not used",
+                })
+                continue
+            sheets[role] = original_to_safe[original_filename]
+            resolved_roles[original_filename] = role
+
         if not sheets:
             raise HTTPException(
                 status_code=400,
-                detail="no sheet files were included -- at least one role-tagged file field is required (e.g. 'ground')",
+                detail="no usable sheet files were included -- upload at least one recognizable drawing (PDF or DXF)",
             )
 
         meta = {
@@ -277,7 +325,7 @@ async def assemble_case_route(request: Request):
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"could not assemble uploaded sheets: {exc}") from exc
 
-    return model
+    return {"model": model, "resolved_roles": resolved_roles, "unresolved": unresolved}
 
 
 @app.post("/models/confirm")

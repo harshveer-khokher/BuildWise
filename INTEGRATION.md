@@ -110,6 +110,32 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 
 ---
 
+## Automatic sheet-role inference (2026-09-19): /cases/assemble no longer requires manual tagging
+
+`POST /cases/assemble` now accepts files under a generic repeated `files` field with no
+caller-declared role at all -- `packages/api/role_inference.py` reads each PDF's own title block
+(`packages.parser.pdf_ingest.extract_title_block`) and matches it against a keyword table
+(ground/first/second/.../elevation_front/rear/side/site/zoning/section) to assign the role
+itself. DXF files (no title-block reader exists for DXF -- CLAUDE.md scope, dxf_ingest works off
+layer/entity geometry) fall back to filename keyword matching, explicitly lower-trust.
+
+**Response shape changed**: `/cases/assemble` now returns `{"model": BuildingModel,
+"resolved_roles": {filename: role}, "unresolved": [{"filename", "reason"}, ...]}` instead of a
+bare `BuildingModel`. A file whose role can't be confidently read is never guessed at or silently
+dropped -- it's reported in `unresolved` with the actual reason (e.g. the title block text that
+didn't match anything), same "declared uncertainty over fake precision" principle as every
+`status=unknown` Finding elsewhere in this project. The explicit named-role field path (e.g. a
+field literally named `ground`) still works unchanged and takes precedence over an auto-guess for
+the same role, for programmatic callers that already know their roles.
+
+Verified against real h01 (6 files, zero manual tags, all 6 including three differently-named
+elevations resolved correctly) and h02 (correctly left `elevation_front.pdf` unresolved --
+Track A's parser had already found its title block actually reads "WOODEN JOINERY DETAIL", a
+real sheet-role mismatch in that case's own files, not a bug). Tests in `tests/test_api.py`
+generate a synthetic title-blocked PDF in-process rather than depending on gitignored real files.
+
+---
+
 ## BuildWise frontend rebuild (2026-09-19): backend adapters added, custom-bylaws deferred
 
 Scoped a full frontend redesign ("BuildWise" branding) against this project's real API. Three
