@@ -59,7 +59,11 @@ class Floor(BaseModel):
     is_stilt: bool
     footprint: Ring
     height_m: float | None = None
-    """From the section sheet, if extractable (CLAUDE.md §10.1). Never inferred from elevations."""
+    """Preferably from the section sheet. May also come from an elevation sheet's own printed
+    overall-height dimension (packages.parser.pdf_ingest.extract_overall_height_m) -- a narrow,
+    confirmed exception to "never from elevations" for that one specific extraction, verified
+    against a real building's as-built height (see INTEGRATION.md). Never from a heuristic
+    line-count estimate; that remains cross-check-only."""
     rooms: list[Room] = Field(default_factory=list)
 
 

@@ -117,6 +117,49 @@ def test_ingest_plan_sheet_h01_ground_produces_plausible_footprint():
 
 
 @requires_h01
+def test_extract_overall_height_m_h01_all_three_elevations_agree():
+    """Confirmed against the real building (see INTEGRATION.md): 33'-0" = 10.0584m, independently
+    from three different elevation sheets via each one's own printed chain-dimension bracket."""
+    for sheet in ("elevation_front", "elevation_rear", "elevation_side"):
+        path = CASES_DIR / "real" / "h01" / f"{sheet}.pdf"
+        height_m, segments, note = pdf_ingest.extract_overall_height_m(path)
+        assert height_m == pytest.approx(10.0584, abs=1e-6), f"{sheet}: {note}"
+        assert segments is not None and len(segments) >= 2  # never a trivial single-segment match
+        assert "bracket" in note
+
+
+def test_extract_overall_height_m_never_returns_a_trivial_single_segment_match():
+    """Regression guard: a bracket matching exactly one chain segment is almost always a
+    coincidental duplicate value elsewhere on the sheet, not a genuine overall-height dimension
+    -- caught during development when h01's rear/side elevations returned tiny (<1m) heights
+    from a stray matching "9\"" or "7'" token before this guard existed."""
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    # A 4-segment chain at x=300 that itself contains a "9\"" value, plus a decoy "9\"" bracket
+    # at x=350 (within the bracket-candidate search window, but not part of the chain). Without
+    # the MIN_SPAN>=2 guard, this decoy would trivially "match" the chain's own lone "9\""
+    # segment and return a tiny wrong height -- exactly the bug this regression test catches.
+    # No contiguous run of >=2 segments sums to 9in, so the honest answer is "no match".
+    page.insert_text((300, 100), '9"')
+    page.insert_text((300, 250), '10\'-3"')
+    page.insert_text((300, 400), '9"')
+    page.insert_text((300, 550), '10\'-3"')
+    page.insert_text((350, 300), '9"')  # decoy bracket, near the chain but not in it
+    tmp = pathlib.Path(__file__).resolve().parent / "_scratch_no_bracket.pdf"
+    doc.save(tmp)
+    doc.close()
+    try:
+        height_m, segments, note = pdf_ingest.extract_overall_height_m(tmp)
+        assert height_m is None
+        assert segments is None
+        assert "no separate bracket" in note or "no vertical dimension chain" in note
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@requires_h01
 def test_extract_title_block_does_not_bleed_into_next_field():
     # Regression guard for a bug caught during development: a blank "CLIENT :-" field must not
     # swallow the next label's line as its own value.
@@ -161,16 +204,21 @@ def test_assemble_case_h01_produces_valid_building_model_with_known_gaps():
     assert len(levels) == len(set(levels))
     assert set(levels) == {0, 1, 2}
 
-    # No site/section sheet was supplied -- these must be None/[], never guessed (CLAUDE.md §5).
+    # No site sheet was supplied -- plot/zoned-area geometry must be None/[], never guessed
+    # (CLAUDE.md §5). No section sheet was supplied either, but h01's elevations carry a real,
+    # confirmed overall-height dimension (INTEGRATION.md) -- height_m is populated from that
+    # narrow, confirmed exception to "elevations are cross-check only", not left None.
     assert model.plot_polygon is None
     assert model.zoned_area is None
     assert model.edges == []
-    assert all(f.height_m is None for f in model.floors)
+    assert all(f.height_m is not None for f in model.floors)
+    total_height_m = sum(f.height_m for f in model.floors if not f.is_stilt)
+    assert total_height_m == pytest.approx(10.058, abs=0.01)  # 33'-0", confirmed against the real building
 
     # The gaps must be recorded verbatim in assumptions, not silently swallowed.
     joined = "\n".join(model.assumptions)
-    assert "no 'section' role sheet supplied" in joined
     assert "no 'site'/'zoning' role sheet supplied" in joined
+    assert "confirmed by" in joined  # the height-extraction note
 
     # Jurisdiction fields recovered from the drawing's own title block.
     assert model.jurisdiction.plot_no == "351"

@@ -14,11 +14,16 @@ in BuildingModel.assumptions and degrade to unknown/skip, never guess"):
     h01/h02 (INTEGRATION.md); falls back to a heuristic elevation-based cross-check and notes
     the result either way, per the task's instruction to "surface it cleanly" rather than solve
     the general case
-  - a section sheet is required for Floor.height_m           -> enforced: height_m is only ever
-    set from a `section` role sheet. Elevations are cross-check only (never height source), and
-    this module does not implement section parsing yet (no section sheet has been supplied to
-    parse) -- height_m stays None until one exists. This is the single most load-bearing rule in
-    this file: it would be easy, and wrong, to eyeball a height off an elevation instead.
+  - a section sheet is the preferred source for Floor.height_m -> section parsing isn't
+    implemented (no section sheet has been supplied to develop it against yet). Height falls
+    back to `pdf_ingest.extract_overall_height_m()`: an elevation sheet's own printed
+    chain-dimension bracket (a labeled overall-height dimension, not a heuristic line count).
+    This is a deliberate, confirmed exception to "elevations are cross-check only" -- verified
+    against a real drawing against the actual as-built height (see INTEGRATION.md) -- and it
+    stays narrowly scoped to that one extraction function; `estimate_storey_count_from_elevation`
+    (arbitrary long-stroke counting) remains cross-check-only exactly as before, and multiple
+    elevation sheets disagreeing on height is still surfaced as an ambiguity, never averaged or
+    silently picked.
   - plan footprints share a common origin/datum with the site sheet -> no site sheet exists for
     h01/h02 either; each floor's footprint is left in ITS OWN sheet-local metre frame (see
     pdf_ingest module docstring), plot_polygon/zoned_area/edges are left None/[], and this is
@@ -207,7 +212,7 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
                 level=level,
                 is_stilt=is_stilt,
                 footprint=ingested["footprint"],
-                height_m=None,  # CLAUDE.md §10.1: only ever set from a `section` sheet.
+                height_m=None,  # may be overwritten below from a section or a verified elevation dimension.
                 rooms=rooms,
             )
         )
@@ -215,13 +220,16 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
 
     floors.sort(key=lambda f: f.level)
 
-    # --- section sheet: the only legitimate source of Floor.height_m -----------------------
+    # --- section sheet: the preferred source of Floor.height_m -----------------------------
     section_roles = [r for r in sheets if _classify_role(r) == "section"]
     if not section_roles:
         assumptions.append(
-            "assemble_case: no 'section' role sheet supplied -- Floor.height_m left None for "
-            "every floor, and total-height/storey-height rules must emit status=unknown, never "
-            "pass (CLAUDE.md §10.1: elevations are cross-check only, never a height source)."
+            "assemble_case: no 'section' role sheet supplied -- height will be attempted from "
+            "an elevation sheet's own labeled overall-height dimension instead (see below). This "
+            "is a deliberate, confirmed exception to 'elevations are cross-check only' (CLAUDE.md "
+            "§10.1's original rule): it applies ONLY to a sheet's own printed chain-dimension "
+            "bracket (extract_overall_height_m), never to the heuristic line-count estimate, "
+            "which remains cross-check-only exactly as before. See INTEGRATION.md for why."
         )
     else:
         # Section parsing (extracting Floor.height_m, basement depth, stilt clearance from a
@@ -230,13 +238,14 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
         # leaving heights None with no explanation, so this isn't mistaken for "no section".
         assumptions.append(
             f"assemble_case: section sheet(s) present ({section_roles}) but section-sheet "
-            "height extraction is not yet implemented in this parser build; Floor.height_m left "
-            "None pending that work -- treat as unknown, not as 'confirmed no height'."
+            "height extraction is not yet implemented in this parser build; falling back to "
+            "elevation-derived height below, same as when no section sheet exists at all."
         )
 
-    # --- elevation cross-check: role sanity + heuristic storey-count hint -------------------
+    # --- elevation cross-check: role sanity + storey-count hint + overall-height extraction -
     elevation_roles = [r for r in sheets if _classify_role(r) == "elevation"]
     valid_elevation_estimates: list[int] = []
+    valid_heights_m: list[tuple[str, float, list]] = []  # (role, height_m, matched_segments)
     for role in elevation_roles:
         sheet_path = case_dir / sheets[role]
         if sheet_path.suffix.lower() != ".pdf":
@@ -250,13 +259,18 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
                 f"in meta.json, but its title-block text reads {title!r}, which does not "
                 "confirm that (extraction ambiguity: possible sheet-role mismatch, CLAUDE.md "
                 "§10.1 -- treat this sheet as unverified, do not use it for the storey "
-                "cross-check below)."
+                "cross-check or height extraction below)."
             )
             continue
         count, note = pdf_ingest.estimate_storey_count_from_elevation(sheet_path)
         assumptions.append(f"assemble_case: [{role}] {note}")
         if count is not None:
             valid_elevation_estimates.append(count)
+
+        height_m, segments, height_note = pdf_ingest.extract_overall_height_m(sheet_path)
+        assumptions.append(f"assemble_case: [{role}] {height_note}")
+        if height_m is not None:
+            valid_heights_m.append((role, height_m, segments))
 
     plan_storey_count = len(floors)
     if valid_elevation_estimates:
@@ -283,6 +297,53 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
         assumptions.append(
             "assemble_case: storey-count cross-check inconclusive -- no elevation sheet both "
             "confirmed its role via title-block text AND produced a usable heuristic estimate."
+        )
+
+    # --- assign height from an elevation's own labeled overall-height dimension, if any -----
+    if valid_heights_m:
+        distinct_values = {round(h, 3) for _, h, _ in valid_heights_m}
+        if len(distinct_values) > 1:
+            assumptions.append(
+                "assemble_case: HEIGHT MISMATCH (extraction ambiguity candidate) -- elevation "
+                f"sheets disagree on overall height: {[(r, round(h, 3)) for r, h, _ in valid_heights_m]}. "
+                "Floor.height_m left None on every floor rather than picking one silently."
+            )
+        else:
+            height_m = valid_heights_m[0][1]
+            agreeing_roles = [r for r, _, _ in valid_heights_m]
+            segments = valid_heights_m[0][2] or []
+            non_stilt_floors = [f for f in floors if not f.is_stilt]
+            if non_stilt_floors and segments and len(segments) % len(non_stilt_floors) == 0:
+                # Segments are ordered top-to-bottom on the sheet; floors are sorted ascending by
+                # level (ground first). Pair the topmost segment group with the TOP floor, not
+                # the ground floor -- reversed(non_stilt_floors) puts the highest level first.
+                per_floor_n = len(segments) // len(non_stilt_floors)
+                for i, floor in enumerate(reversed(non_stilt_floors)):
+                    group = segments[i * per_floor_n:(i + 1) * per_floor_n]
+                    floor.height_m = sum(s["inches"] for s in group) * 0.0254
+                assumptions.append(
+                    f"assemble_case: height {round(height_m, 3)}m confirmed by {len(agreeing_roles)} "
+                    f"elevation sheet(s) ({agreeing_roles}) via their own labeled overall-height "
+                    "dimension (not a section, not a heuristic line count). The matched segment "
+                    f"count divided evenly across the {len(non_stilt_floors)} assembled floor(s); "
+                    "each floor's height_m was set to its own share, top floor matched to the "
+                    "topmost segment group."
+                )
+            elif non_stilt_floors:
+                non_stilt_floors[-1].height_m = height_m
+                assumptions.append(
+                    f"assemble_case: height {round(height_m, 3)}m confirmed by {len(agreeing_roles)} "
+                    f"elevation sheet(s) ({agreeing_roles}) via their own labeled overall-height "
+                    "dimension. Could not split it evenly across floors (the matched segment count "
+                    f"doesn't divide the {len(non_stilt_floors)} assembled floor(s)) -- assigned the "
+                    f"WHOLE total to the top floor (level={non_stilt_floors[-1].level}) only. Other "
+                    "floors' height_m=None means 'not individually broken out', not 'zero height' "
+                    "-- _building_height_m() still sums to the correct total either way."
+                )
+    else:
+        assumptions.append(
+            "assemble_case: no elevation sheet yielded a usable overall-height dimension -- "
+            "Floor.height_m stays None for every floor."
         )
 
     # --- site/zoning: plot polygon, plot area, zoned area, edges ----------------------------

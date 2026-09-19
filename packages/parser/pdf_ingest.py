@@ -516,3 +516,176 @@ def estimate_storey_count_from_elevation(path: str | Path) -> tuple[int | None, 
         "not verified structural slab lines -- treat as a cross-check hint only, never as the "
         "source of Floor.height_m or an authoritative storey count."
     )
+
+
+# ---------------------------------------------------------------------------
+# Overall height from an elevation's own labeled dimension chain
+# ---------------------------------------------------------------------------
+#
+# This is NOT the same thing as estimate_storey_count_from_elevation above (which counts
+# arbitrary long strokes and stays a cross-check hint forever, per CLAUDE.md). This instead reads
+# an *explicit, printed* overall-height dimension off the sheet -- the standard chain-dimension
+# convention where a run of small segments (clear height, slab thickness, clear height, ...) is
+# bracketed by a single larger "check" dimension spanning a contiguous subset of them. Verified
+# against a real drawing (h01's rear elevation, confirmed correct by the project owner against
+# the real building): a left-margin chain reads 9" / 7' / 9" / 10'-3" / 9" / 10'-3" / 9" /
+# 10'-3" / 2'-3", and a separate "33'" label matches the sum of the middle six segments (9" +
+# 10'-3" + 9" + 10'-3" + 9" + 10'-3" = 396" = 33'-0") exactly. That match is the signal: it means
+# those six segments are "the building" and the 7'+9" above / 2'-3" below are something else
+# (here: a sub-2.25m mumty/tank the bylaw's own height definition excludes, and a plinth-to-road
+# offset that sits below where the height definition even starts measuring).
+#
+# This intentionally does NOT try to interpret the "lvl ±0" / "lvl +42" style callouts elsewhere
+# on these sheets -- those turned out to recur at multiple different physical heights on the same
+# elevation (almost certainly a per-floor local datum, not one building-wide reference), and
+# guessing at that convention risked a confidently wrong number. The dimension chain + matching
+# bracket approach here never guesses: if no bracket value matches a contiguous run of a chain to
+# within half an inch, it returns None rather than picking the closest thing.
+
+_DIM_FEET_INCH_EXACT_RE = re.compile(r"^(\d+)'-(\d+)\"$")
+_DIM_FEET_ONLY_EXACT_RE = re.compile(r"^(\d+)'$")
+_DIM_INCH_ONLY_EXACT_RE = re.compile(r"^(\d+)\"$")
+
+_CHAIN_X_TOLERANCE_PT = 15
+"""How close two dimension tokens' x-centers must be (in display-space points) to belong to the
+same vertical dimension chain. Tuned against the ~28pt gap observed between h01's main chain
+(x=620) and its bracket label (x=592) -- comfortably separates the two into different clusters."""
+
+_BRACKET_MAX_INCH_TOLERANCE = 0.5
+"""A bracket's value must match a contiguous run's sum to within this many inches to count as a
+match -- whole-inch dimension strings only, no fractional-inch rounding slop expected."""
+
+
+def _dimension_token_to_inches(text: str) -> float | None:
+    """Exact-match version of the module's `_clean_dimension_values_m` -- this needs to classify
+    one whole text run as a dimension-or-not, not scan for dimensions embedded in a larger
+    string, so it anchors the whole token rather than searching within it."""
+    text = text.strip()
+    m = _DIM_FEET_INCH_EXACT_RE.match(text)
+    if m:
+        return int(m.group(1)) * 12 + int(m.group(2))
+    m = _DIM_FEET_ONLY_EXACT_RE.match(text)
+    if m:
+        return int(m.group(1)) * 12
+    m = _DIM_INCH_ONLY_EXACT_RE.match(text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _display_space_tokens(page: "fitz.Page") -> list[tuple[str, float, float, float]]:
+    """(text, inches, center_x, center_y) for every text run on `page` that is a clean dimension
+    token, in DISPLAY-space coordinates (i.e. matching what a human sees when the page is
+    rendered the right way up) -- these sheets carry a /Rotate flag, and PyMuPDF's get_text()
+    returns coordinates in the pre-rotation mediabox frame (see module docstring), so raw
+    coordinates would silently mis-order "top" and "bottom". `~page.derotation_matrix` maps a
+    raw-frame point into display space; empirically verified against known reference points
+    (the two "ROAD lvl" labels on h01's rear elevation land at the bottom of the sheet, and the
+    small rooftop mumty's labels land at the top, exactly matching the rendered image)."""
+    inv = ~page.derotation_matrix
+    tokens: list[tuple[str, float, float, float]] = []
+    d = page.get_text("dict")
+    for block in d.get("blocks", []):
+        for line in block.get("lines", []):
+            spans = line.get("spans", [])
+            if not spans:
+                continue
+            text = "".join(s["text"] for s in spans).strip()
+            if not text:
+                continue
+            inches = _dimension_token_to_inches(text)
+            if inches is None:
+                continue
+            rect = fitz.Rect(spans[0]["bbox"])
+            for s in spans[1:]:
+                rect |= fitz.Rect(s["bbox"])
+            p0 = fitz.Point(rect.x0, rect.y0) * inv
+            p1 = fitz.Point(rect.x1, rect.y1) * inv
+            cx, cy = (p0.x + p1.x) / 2, (p0.y + p1.y) / 2
+            tokens.append((text, inches, cx, cy))
+    return tokens
+
+
+def extract_overall_height_m(path: str | Path) -> tuple[float | None, list[dict] | None, str]:
+    """Find a vertical dimension chain plus a bracket dimension matching a contiguous run of it,
+    per the module docstring above.
+
+    Returns (height_m, matched_segments, note). `matched_segments` is the list of {"text",
+    "inches"} dicts the bracket's contiguous run consisted of (in top-to-bottom sheet order) --
+    callers that also know the floor count can use its length to attempt a per-floor breakdown;
+    this function itself only produces one whole-building total. `height_m` is None (with `note`
+    explaining why) whenever no bracket cleanly matches a contiguous run -- never a best guess.
+    """
+    path = Path(path)
+    doc = fitz.open(str(path))
+    page = doc[0]
+    tokens = _display_space_tokens(page)
+    doc.close()
+
+    if not tokens:
+        return None, None, f"extract_overall_height_m({path.name}): no clean dimension tokens found on this sheet."
+
+    tokens_sorted = sorted(tokens, key=lambda t: t[2])
+    clusters: list[list[tuple[str, float, float, float]]] = []
+    for tok in tokens_sorted:
+        for cluster in clusters:
+            if abs(cluster[0][2] - tok[2]) < _CHAIN_X_TOLERANCE_PT:
+                cluster.append(tok)
+                break
+        else:
+            clusters.append([tok])
+
+    chains = [sorted(c, key=lambda t: t[3]) for c in clusters if len(c) >= 3]
+    if not chains:
+        return None, None, (
+            f"extract_overall_height_m({path.name}): no vertical dimension chain (3+ tokens "
+            "sharing an x-position) found -- this sheet may not have a running dimension string, "
+            "or its tokens didn't parse cleanly (e.g. fractional inches split across lines)."
+        )
+
+    # Collect every valid match across every chain/bracket-candidate pair, then take the LARGEST
+    # one -- a bracket matching only a single segment is almost certainly a coincidental
+    # duplicate value elsewhere on the sheet, not a genuine chain-dimension bracket (which by
+    # convention spans multiple segments), so those are excluded outright rather than being
+    # returned just because they were found first.
+    MIN_SPAN = 2
+    best: tuple[float, list, str] | None = None  # (value_in, included_tokens, label)
+
+    for chain in chains:
+        chain_ids = {id(t) for t in chain}
+        chain_x = sum(t[2] for t in chain) / len(chain)
+        bracket_candidates = [
+            t for t in tokens
+            if id(t) not in chain_ids and _CHAIN_X_TOLERANCE_PT <= abs(t[2] - chain_x) < 120
+        ]
+        for label, value_in, _bx, _by in bracket_candidates:
+            for start in range(len(chain)):
+                running = 0.0
+                for end in range(start, len(chain)):
+                    running += chain[end][1]
+                    if running > value_in + _BRACKET_MAX_INCH_TOLERANCE:
+                        break
+                    if (
+                        end - start + 1 >= MIN_SPAN
+                        and abs(running - value_in) <= _BRACKET_MAX_INCH_TOLERANCE
+                        and (best is None or value_in > best[0])
+                    ):
+                        best = (value_in, chain[start:end + 1], label)
+
+    if best is None:
+        return None, None, (
+            f"extract_overall_height_m({path.name}): found a dimension chain but no separate "
+            "bracket value matched the sum of any contiguous run of 2+ of its segments -- not "
+            "guessing at which segments would represent the building height."
+        )
+
+    value_in, included, label = best
+    note = (
+        f"extract_overall_height_m({path.name}): bracket '{label}' ({value_in:.0f}in) matches "
+        f"the sum of chain segments {[t[0] for t in included]} exactly -- treated as the "
+        "plinth-to-parapet height. This is a real labeled dimension on the sheet, not a "
+        "heuristic guess -- but it is still an ELEVATION, not a section; confirm on site if this "
+        "matters for a compounding/appeal decision."
+    )
+    segments = [{"text": t[0], "inches": t[1]} for t in included]
+    return value_in * 0.0254, segments, note

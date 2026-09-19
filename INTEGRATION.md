@@ -110,6 +110,70 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 
 ---
 
+## Height from an elevation's own labeled dimension, confirmed against the real building (2026-09-20)
+
+**Reverses the earlier "keep elevations cross-check only" decision recorded above (2026-09-19) --
+on new evidence, not a casual override.** That earlier decision was about *heuristically* reading
+a height off an elevation (counting arbitrary long strokes, or eyeballing an ambiguous `lvl ±0`
+callout that turns out to recur at multiple different physical heights on the same sheet --
+almost certainly a per-floor local datum, not one building-wide reference). This is different: a
+real, *explicitly printed* overall-height dimension in the standard chain-dimension convention (a
+run of small segments -- clear height, slab thickness, repeat -- bracketed by one larger "check"
+dimension spanning a contiguous subset of them).
+
+Found on h01's rear elevation: a left-margin chain reads `9" / 7' / 9" / 10'-3" / 9" / 10'-3" /
+9" / 10'-3" / 2'-3"`, and a separate `"33'"` label matches the sum of the middle six segments
+exactly (`9"+10'-3"+9"+10'-3"+9"+10'-3" = 396" = 33'-0"`). **The project owner independently
+confirmed 33'-0" / 10.06m is the real, correct height of this building** before this was
+implemented -- this was not assumed from the drawing alone. The excluded segments line up with
+real features: the `7'+9"` above the bracket sits on the small rooftop mumty/tank (`lvl -111"` /
+`-120"` labels) -- at 7' (2.13m) it's under the bylaw's own 2.25m mumty/tank exclusion (clause
+§3); the `2'-3"` below the bracket is the plinth-to-road offset, and CLAUDE.md's height definition
+starts measuring *at* plinth, not at road level.
+
+**Implementation** (`packages/parser/pdf_ingest.py::extract_overall_height_m`): transforms text
+positions into true display-space coordinates first (these sheets carry a `/Rotate 270` flag;
+raw PyMuPDF coordinates are pre-rotation and would silently mis-order top/bottom -- verified
+against known reference points, the two `ROAD lvl` labels landing at the bottom of the sheet post-
+transform). Clusters dimension tokens sharing an x-position into vertical chains, then looks for
+any *other* nearby token whose value equals the sum of a contiguous run of >=2 chain segments
+(single-segment matches are excluded outright -- a regression caught during development where a
+coincidental duplicate value elsewhere on the sheet trivially "matched" one lone chain segment and
+returned a tiny wrong height; now the largest valid multi-segment match wins). Returns `(None,
+None, note)` -- never a guess -- when no such bracket exists.
+
+**Verified independently three times**: h01's front, rear, and side elevations all separately
+yield the identical 10.0584m via their own chain/bracket, cross-validating both the confirmed
+ground truth and the extraction method itself. h02's readable sheets yield a different but
+internally-consistent 11.8872m (39') -- not independently confirmed against h02's real height,
+so treat that one with more caution than h01's.
+
+**Wired into `packages/parser/semantics.py`**: only trusts an elevation sheet for this if its
+title block passes the same role-verification gate already used for the storey-count cross-check
+(`sheet_title_matches_role`) -- this correctly excludes h02's `elevation_front.pdf`, which despite
+its meta.json role is actually a "WOODEN JOINERY DETAIL" sheet (a real mismatch Track A found
+earlier, not a new bug). Multiple elevation sheets disagreeing on height is surfaced as an
+extraction ambiguity and `Floor.height_m` stays `None` on every floor rather than silently picking
+one. When they agree and the matched segment count divides evenly across the assembled floors,
+each floor gets its own share (top floor matched to the topmost segment group); otherwise the
+whole total is assigned to the top floor only, since `_building_height_m()` sums non-`None`
+values and either approach produces the correct total either way.
+
+Updated: `packages/schema/building_model.py`'s `Floor.height_m` docstring (comment-only, not a
+structural schema change) and `packages/parser/semantics.py`'s module docstring, both to state
+this narrow exception plainly rather than the blanket "never from elevations" they said before.
+`estimate_storey_count_from_elevation` (arbitrary long-stroke counting) is unaffected and remains
+cross-check-only exactly as before -- this exception applies only to `extract_overall_height_m`'s
+labeled-bracket match.
+
+**Downstream effect, verified**: h01's room-min-height checks (`PUDA1996.room.
+habitable_min_height`, `.service_min_mean_height`) now return real `pass` results (observed
+3.3528m against a 2.7m/2.25m requirement) instead of `unknown` -- the first real, non-fixture
+findings this pipeline has produced from actual computed geometry plus a section-adjacent height
+source, not just structural/missing-input outcomes. `tests/test_parser.py`'s h01 assembly test
+was updated accordingly (it previously asserted `height_m is None` for every floor, encoding the
+now-superseded policy) plus two new direct tests for `extract_overall_height_m` itself.
+
 ## Automatic sheet-role inference (2026-09-19): /cases/assemble no longer requires manual tagging
 
 `POST /cases/assemble` now accepts files under a generic repeated `files` field with no
