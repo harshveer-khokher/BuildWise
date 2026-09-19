@@ -110,6 +110,49 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 
 ---
 
+## BuildWise frontend rebuild (2026-09-19): backend adapters added, custom-bylaws deferred
+
+Scoped a full frontend redesign ("BuildWise" branding) against this project's real API. Three
+small adapters added to `packages/api/main.py` (no rule-engine/parser logic changed, only new
+thin routes reusing existing functions):
+
+- `GET /jurisdictions` -- static list (today: just Mohali/GMADA/`puda_building_rules_1996`),
+  structured so a future custom-bylaws-derived entry is an append, not a shape change.
+- `POST /report/markdown` -- mirrors `/report/html`/`/report/pdf` exactly, wraps
+  `packages.report.render.render_markdown` (added a few conversations ago, previously only
+  reachable via `tools/run_check.py --markdown`).
+- `POST /cases/assemble` -- the real gap: `/upload`'s multipart path was a hard 501 because
+  `packages.api.parsing.try_parse_file` expects a single-file `ingest(bytes, filename)` entry
+  point that doesn't exist, while CLAUDE.md's actual architecture (§10.1) is multi-sheet
+  (`packages.parser.semantics.assemble_case(meta_path)`, which reads a meta.json + sibling files
+  from disk). `/cases/assemble` is a thin adapter: multipart fields whose value is a file are
+  treated as one sheet each (field name = role, e.g. `ground`, `elevation_front`, `site`),
+  written to a `tempfile.TemporaryDirectory`, a `meta.json` is synthesized, and
+  `assemble_case()` is called unchanged. Verified end-to-end against real h01 sheets (4 files ->
+  valid BuildingModel -> `/checks/run` -> 22 issues, matching `tools/run_check.py`'s output) and
+  tested in `tests/test_api.py` against the committed synth DXF (real drawings are gitignored,
+  so tests can't depend on them).
+
+**Deliberately NOT built this pass** (flagged to the user as a real backend feature, not a
+frontend task, before starting): live custom-bylaws ingestion for an "Other" location -- running
+the full extract -> two-pass-LLM-transcribe -> verify pipeline on user-submitted bylaws and
+registering a new jurisdiction on the fly. This needs async job tracking (the pipeline takes
+real LLM calls, likely minutes) and a persistent jurisdiction registry beyond the static list
+above. User confirmed treating this as a separate follow-up task. `GET /jurisdictions`'s shape
+is intentionally forward-compatible with it (an id/label/authority/rule_pack list a background
+ingestion job could later append to), but no ingestion endpoint exists yet.
+
+**Plot-size fallback** (width x length + unit, entered when a drawing has no site/zoning sheet):
+implemented client-side only, no backend change -- the frontend computes a rectangle
+`plot_polygon` and `plot_area_sqm` from the user's input and merges it into the BuildingModel
+JSON before calling `/checks/run`, adding an `assumptions` entry noting it's user-entered, not
+traced. This unblocks coverage/FAR checks (which only need `plot_area_sqm`) but explicitly NOT
+the containment check (which needs `zoned_area`, the buildable envelope -- a different polygon
+than the plot rectangle, not derivable from plot dimensions alone). The frontend must not
+conflate the two.
+
+---
+
 ## Follow-up (2026-09-19): yard-zone labels are a real, unextracted setback signal
 
 `packages/parser/pdf_ingest.py::_NON_ROOM_LABELS` currently discards `FRONTYARD`, `BACKYARD`,

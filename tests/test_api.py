@@ -201,6 +201,57 @@ def test_report_pdf_returns_pdf_bytes():
     assert resp.content[:4] == b"%PDF"
 
 
+SYNTH_DXF = pathlib.Path(__file__).resolve().parents[1] / "packages" / "cases" / "synth" / "s_smoke.dxf"
+
+
+def test_jurisdictions_lists_mohali():
+    resp = client.get("/jurisdictions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list) and len(data) >= 1
+    assert any(j["authority"] == "GMADA" for j in data)
+    for j in data:
+        assert {"id", "label", "authority", "rule_pack"} <= j.keys()
+
+
+def test_report_markdown_route():
+    data = _load_stub("s01_clean_250")
+    resp = client.post("/report/markdown", json={"model": data})
+    assert resp.status_code == 200
+    assert "markdown" in resp.headers["content-type"]
+    assert resp.text.startswith("# ")
+    _assert_response_clean(resp)
+
+
+def test_cases_assemble_with_synth_dxf():
+    """Uses the committed synth smoke DXF (real drawings under packages/cases/real/ are
+    gitignored per CLAUDE.md §10.7, so a portable fixture is needed here)."""
+    with open(SYNTH_DXF, "rb") as f:
+        resp = client.post(
+            "/cases/assemble",
+            files={"ground": ("s_smoke.dxf", f, "application/octet-stream")},
+            data={"authority": "GMADA"},
+        )
+    assert resp.status_code == 200, resp.text
+    model = resp.json()
+    assert model["jurisdiction"]["authority"] == "GMADA"
+    assert len(model["floors"]) >= 1
+    assert model["floors"][0]["level"] == 0
+
+
+def test_cases_assemble_requires_at_least_one_file():
+    resp = client.post("/cases/assemble", data={"authority": "GMADA"})
+    assert resp.status_code == 400
+
+
+def test_cases_assemble_rejects_unsupported_file_type():
+    resp = client.post(
+        "/cases/assemble",
+        files={"ground": ("notes.txt", b"not a drawing", "text/plain")},
+    )
+    assert resp.status_code == 422
+
+
 def test_all_stubs_produce_a_report_without_error():
     for name in ALL_STUBS:
         data = _load_stub(name)

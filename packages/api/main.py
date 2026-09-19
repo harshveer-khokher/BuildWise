@@ -41,6 +41,7 @@ Every route return value is checked (in tests/test_api.py) to never contain the 
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Literal
 
@@ -51,7 +52,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from packages.api import checks, parsing
 from packages.report.overlay import build_overlay
-from packages.report.render import render_html, render_pdf, summary_line
+from packages.report.render import render_html, render_markdown, render_pdf, summary_line
 from packages.schema import BuildingModel, Confidence, Finding
 
 logging.basicConfig(level=logging.INFO)
@@ -135,6 +136,31 @@ def health() -> dict:
     }
 
 
+# --------------------------------------------------------------------------------------------
+# Jurisdictions: a small, explicit registry rather than "one pack file = one jurisdiction"
+# (a real jurisdiction may need more than a bare pack filename someday -- a display name,
+# vintage rules, etc.). Static for now: exactly one real jurisdiction exists
+# (corpus/MANIFEST.json / packages/rules/packs/puda_1996.yaml, Mohali/GMADA). Structured so
+# adding a custom-bylaws-derived jurisdiction later (a real backend feature, not built in this
+# pass -- see INTEGRATION.md) is an append to this list, not a response-shape change.
+# --------------------------------------------------------------------------------------------
+
+_JURISDICTIONS = [
+    {
+        "id": "mohali_gmada",
+        "label": "Mohali (GMADA)",
+        "authority": "GMADA",
+        "rule_pack": "puda_building_rules_1996",
+        "source_note": "Punjab Urban Planning and Development Authority (Building) Rules, 1996",
+    },
+]
+
+
+@app.get("/jurisdictions")
+def list_jurisdictions() -> list[dict]:
+    return _JURISDICTIONS
+
+
 @app.post("/upload", response_model=None)
 async def upload(request: Request):
     """Accepts either a drawing file (multipart) or a BuildingModel JSON body directly.
@@ -172,6 +198,85 @@ async def upload(request: Request):
         model = BuildingModel.model_validate(body)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=f"body is not a valid BuildingModel: {exc}") from exc
+    return model
+
+
+@app.post("/cases/assemble", response_model=None)
+async def assemble_case_route(request: Request):
+    """Multi-file, role-tagged upload -> one BuildingModel, via Track A's real assembly logic
+    (packages.parser.semantics.assemble_case). This is the real gap identified during frontend
+    scoping: /upload's JSON-only path exists because CLAUDE.md's own architecture treats a
+    building as a *sheet set* (ground/first/second/elevations/site/section), never one file
+    (§10.1: "assembly is a required parser step, not an extra"). This route is a thin adapter,
+    not new core logic -- it writes the uploaded files to a temp directory, synthesizes the
+    meta.json assemble_case() already expects, and calls it unchanged.
+
+    multipart/form-data: every field whose value is a file is treated as one sheet, with the
+    field NAME as its role (e.g. a field named "ground" is the ground floor plan) -- roles match
+    packages.parser.semantics._PLAN_LEVELS / elevation* / site / zoning / section.
+    Plain text fields: "authority" (e.g. "GMADA", from the jurisdiction picked in the UI) and
+    optionally "rule_pack" to override the pack semantics.assemble_case defaults to.
+    """
+    import tempfile
+    from pathlib import Path
+
+    try:
+        from packages.parser import semantics
+    except Exception as exc:
+        raise HTTPException(
+            status_code=501,
+            detail=f"multi-sheet assembly is not available in this environment: {exc}",
+        ) from exc
+
+    form = await request.form()
+    sheets: dict[str, str] = {}
+    authority = None
+    rule_pack = None
+
+    with tempfile.TemporaryDirectory(prefix="buildwise_upload_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        for field_name, value in form.multi_items():
+            if hasattr(value, "read"):  # an UploadFile
+                filename = value.filename or f"{field_name}.pdf"
+                suffix = Path(filename).suffix.lower() or ".pdf"
+                if suffix not in (".pdf", ".dxf"):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"sheet '{field_name}': unsupported file type {suffix!r} (only .pdf and .dxf are ingested today)",
+                    )
+                dest = tmp_path / f"{field_name}{suffix}"
+                dest.write_bytes(await value.read())
+                sheets[field_name] = dest.name
+            elif field_name == "authority":
+                authority = value
+            elif field_name == "rule_pack":
+                rule_pack = value
+
+        if not sheets:
+            raise HTTPException(
+                status_code=400,
+                detail="no sheet files were included -- at least one role-tagged file field is required (e.g. 'ground')",
+            )
+
+        meta = {
+            "case_id": "upload",
+            "provenance": "real",
+            "sheets": sheets,
+            "known_gaps": [],
+        }
+        if authority:
+            meta["authority"] = authority
+        if rule_pack:
+            meta["rule_pack"] = rule_pack
+
+        meta_path = tmp_path / "meta.json"
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+        try:
+            model = semantics.assemble_case(meta_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"could not assemble uploaded sheets: {exc}") from exc
+
     return model
 
 
@@ -252,6 +357,17 @@ def report_pdf_route(payload: ReportRequest) -> Response:
     findings = _findings_for(payload.model, payload.findings)
     pdf_bytes = render_pdf(payload.model, findings)
     return Response(content=pdf_bytes, media_type="application/pdf")
+
+
+@app.post("/report/markdown")
+def report_markdown_route(payload: ReportRequest) -> Response:
+    findings = _findings_for(payload.model, payload.findings)
+    text = render_markdown(payload.model, findings)
+    return Response(
+        content=text,
+        media_type="text/markdown",
+        headers={"Content-Disposition": 'attachment; filename="buildwise-report.md"'},
+    )
 
 
 if __name__ == "__main__":
