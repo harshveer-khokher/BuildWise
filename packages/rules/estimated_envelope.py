@@ -49,7 +49,16 @@ _PACKS_DIR = pathlib.Path(__file__).resolve().parent / "packs"
 def _setback_formula_constants(rule_pack_id: str) -> tuple[float, float, float, float] | None:
     """(front_rear_fraction, front_rear_min_m, side_fraction, side_min_m), read live from the
     verified rule pack -- never duplicated here as literals, so a future gazette-diff correction
-    to these values is picked up automatically instead of silently drifting out of sync."""
+    to these values is picked up automatically instead of silently drifting out of sync.
+
+    Matched by `kind: setback_formula` plus an id ending in ".front_rear_formula"/
+    ".side_formula" -- NOT by the PUDA1996-specific id prefix -- so this generalises to any
+    pack that follows the same naming convention, not just the one it was first written
+    against. A pack with no generic setback formula at all (e.g. Chandigarh's residential-
+    plotted setback is simply "As per Zoning/ Frame Control", clause 4.1 -- no fraction-of-
+    height formula exists there to read) correctly returns None here, and the caller reports
+    the estimate as unavailable rather than silently reusing another jurisdiction's numbers.
+    """
     exact = _PACKS_DIR / f"{rule_pack_id}.yaml"
     if not exact.exists():
         candidates = sorted(_PACKS_DIR.glob("*.yaml"))
@@ -57,8 +66,9 @@ def _setback_formula_constants(rule_pack_id: str) -> tuple[float, float, float, 
             return None
         exact = candidates[0]
     pack = load_pack(exact)
-    fr_rule = next((r for r in pack["rules"] if r["id"] == "PUDA1996.setback.front_rear_formula"), None)
-    side_rule = next((r for r in pack["rules"] if r["id"] == "PUDA1996.setback.side_formula"), None)
+    setback_formula_rules = [r for r in pack["rules"] if r.get("kind") == "setback_formula"]
+    fr_rule = next((r for r in setback_formula_rules if r["id"].endswith(".front_rear_formula")), None)
+    side_rule = next((r for r in setback_formula_rules if r["id"].endswith(".side_formula")), None)
     if fr_rule is None or side_rule is None:
         return None
     return (

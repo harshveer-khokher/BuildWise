@@ -65,11 +65,17 @@ def _find_real_entry_point():
 def _resolve_pack_path(model: BuildingModel) -> pathlib.Path | None:
     """Best-effort match of `model.jurisdiction.rule_pack` to a file under rules/packs/.
 
-    Naming isn't guaranteed to line up 1:1 (e.g. jurisdiction.rule_pack="puda_building_rules_1996"
-    vs. a pack file named "puda_1996.yaml") since packs/ is Track B's namespace, not ours. Try an
-    exact stem match first; if there's exactly one pack file in the whole directory, fall back to
-    it rather than refuse to run — multiple packs with no match is left as "can't resolve" so we
-    don't silently pick the wrong jurisdiction's rules.
+    Naming isn't guaranteed to line up 1:1 -- packs/ is Track B's namespace, not ours -- so this
+    tries an exact stem match first (e.g. jurisdiction.rule_pack="puda_building_rules_1996" against
+    a pack file literally named "puda_building_rules_1996.yaml", which is now the real, working
+    path now that a second pack exists); if there's exactly one pack file in the whole directory,
+    fall back to it rather than refuse to run. That single-pack fallback used to be silently load-
+    bearing (the pack file was named puda_1996.yaml, not matching its own rule_pack value, so every
+    resolution actually went through this fallback) until the file was renamed to match -- worth
+    remembering if a future pack's filename ever drifts from its own rule_pack string again, since
+    the fallback stops working the moment a second pack exists and neither name matches. Multiple
+    packs with no exact match is left as "can't resolve" so we don't silently pick the wrong
+    jurisdiction's rules.
     """
     if not _PACKS_DIR.exists():
         return None

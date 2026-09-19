@@ -1,0 +1,375 @@
+# Chandigarh Building Rules (Urban) 2017 -- rule pack
+#
+# Second jurisdiction (2026-09-20). Source: corpus/raw/chandigarh_building_rules_urban_2017.pdf,
+# doc_id chandigarh_building_rules_urban_2017, corpus/MANIFEST.json entry. Scope: clause 4.1
+# "Residential (PLOTTED)" only -- the table a Chandigarh residential house is checked against,
+# mirroring puda_building_rules_1996.yaml's own scope (Track A/B parity, not coincidence).
+#
+# Provenance discipline (CLAUDE.md §1 rule 6, §6.5): every rule below carries a `status` that
+# came out of a real two-pass transcribe+verify run, not hand-typed belief:
+#   - transcription pass -> corpus/extracted/chandigarh_building_rules_urban_2017/rule_synthesis/transcribe_pass1.json
+#   - verification pass  -> corpus/extracted/chandigarh_building_rules_urban_2017/rule_synthesis/verify_pass1.json
+# Both were produced by fresh Claude subagent calls per CLAUDE.md §6.4/§6.5 -- the verifier saw
+# only the proposed value + raw clause text, never the transcriber's reasoning or its
+# quoted-fragment justification. Verdict mapping:
+#   match -> verified | mismatch -> conflict (disabled, both values kept) | not_stated -> seed_unverified
+# This run produced zero `conflict` verdicts and five `not_stated` verdicts (setbacks -- no
+# formula exists at all, see below; and three MARLA-band "Optional, no capacity stated" cells
+# for RWH/solar-water/solar-PV/servant-quarter, which are genuinely not numeric in the clause).
+#
+# Two real gaps, left honest rather than guessed at:
+#
+# 1. SETBACKS ARE NOT A FORMULA HERE. Unlike PUDA1996 clause 17 (a fraction-of-height formula),
+#    this clause's Set Backs row states only "As per Zoning/ Frame Control" -- no numeric value,
+#    no formula. There is nothing for packages/rules/estimated_envelope.py's
+#    _setback_formula_constants() to find in this pack (by design -- it looks for
+#    kind: setback_formula rules and correctly finds none here), so the setback-estimate feature
+#    is simply unavailable for Chandigarh residential-plotted cases. That is the correct,
+#    honest behaviour for this jurisdiction, not a bug to fix.
+#
+# 2. GROUND COVERAGE / FAR / PARKING BANDS ARE VERIFIED BUT NOT ENFORCED. The clause states
+#    four bands by CATEGORY LABEL (MARLA / ONE KANAL / TWO KANAL / ABOVE TWO KANAL), and the
+#    two-pass pipeline verified the numeric value in each band is accurately transcribed
+#    (65%/50%/45%/35% coverage; FAR 2.0/1.5/1.25/1.0; parking 1/2/3/6 ECS). What clause 4.1
+#    does NOT state anywhere in its own text is the sq-metre boundary of each category --
+#    marla/kanal-to-sqm conversion is a land-measurement-unit fact, not something this clause
+#    states, and CLAUDE.md §1 rule 1 forbids inferring a number from outside knowledge even when
+#    that number "should" be common knowledge. (This document elsewhere expresses areas in sq
+#    yards for other categories, which is a further reason not to assume a generic Marla/Kanal
+#    conversion applies unmodified here without checking against this specific administration's
+#    own convention.) Every rule below whose applicable plot-size band can't be determined this
+#    way is `enforced: false` -- the verified number stays fully citable in this pack and in
+#    any report, but the engine will not apply it until the band boundary itself is verified
+#    through the same discipline (a genuinely separate small task, not a numeric-value problem).
+#
+# Schema-gap assumptions (also in INTEGRATION.md):
+#   - packages/schema/building_model.py has no field for plot use-classification, same known gap
+#     as puda_building_rules_1996.yaml -- every applies_when.use below is matched as "always true"
+#     by packages/rules/engine.py's `_applies()` until that field exists.
+#   - Room.use has no "toilet" or "powder_room" value; this clause's "Toilet"/"WC & Powder room"
+#     rows are mapped onto the schema's "wc" value (both share the verified 2.29m height), a
+#     disclosed simplification, not a hidden one.
+#   - No engine `kind` exists yet for a bare max-storeys check, a plinth-height check, a
+#     door/window-area room-AREA check (only Floor.height_m as a room-height proxy exists via
+#     `room_min_height`), or a marla/kanal-denominated plot-size band -- verified facts for all
+#     of these stay in this pack as citable, `enforced: false` rows rather than being dropped,
+#     exactly like puda_building_rules_1996.yaml's own courtyard.width_vs_mean_height /
+#     room.open_space_min_width / staircase.riser / staircase.tread rows.
+#
+# `enforced: true` means packages/rules/engine.py actually evaluates this rule against a
+# BuildingModel today, using the SAME generic per-`kind` handlers puda_building_rules_1996.yaml
+# uses (site_coverage_slab, far_band, room_min_height, light_ventilation_ratio, floor_min_height,
+# staircase_min_width, containment) -- none of that engine code is PUDA-specific; it reads every
+# numeric value from the rule dict.
+
+pack_id: chandigarh_building_rules_urban_2017
+title: "Chandigarh Building Rules (Urban) 2017"
+jurisdiction: CHANDIGARH
+doc_id: chandigarh_building_rules_urban_2017
+
+rules:
+
+  # --- Zoned-area containment (flagship check, CLAUDE.md §7 priority 1) ----------------------
+  # Same generic `kind: containment` as PUDA1996.containment.zoned_area -- no zoning-plan sheet
+  # exists for any Chandigarh case yet, so this will correctly emit status=unknown, never a pass,
+  # exactly like the Mohali cases today. Included because it costs nothing to wire and is ready
+  # the moment a real zoning plan is traced for a Chandigarh plot.
+  - id: CHD2017.containment.zoned_area
+    title: Building footprint must sit inside the zoned area
+    kind: containment
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: not_stated
+    note: >
+      Not a numeric transcription -- clause 4.1's own Set Backs row says only "As per Zoning/
+      Frame Control", which is exactly the structural statement that a real zoning/frame-control
+      plan overrides any generic setback here. No bare number exists to run through the two-pass
+      verifier, so this stays "not_stated" (matching the verifier's own verdict on the Set Backs
+      row) rather than "verified" by default.
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    check: "footprint.within(zoned_area)"
+    severity: blocking
+    compoundable: false
+    remedies: [geometric_edit, zoning_revision_request]
+    enforced: true
+
+  # --- Ground coverage (verified values; band boundaries unresolved, see header) --------------
+  - id: CHD2017.ground_coverage.marla
+    title: Maximum ground coverage -- MARLA plots
+    kind: site_coverage_slab
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (65%, plus an additional up-to-5% allowance stated in the same cell). Band boundary (which plot_area_sqm range counts as 'MARLA') is not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_pct: 65
+    additional_pct_allowance: 5
+    check: "ground_coverage_pct <= 65 (+5 additional allowance) for MARLA-category plots"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.ground_coverage.one_kanal
+    title: Maximum ground coverage -- ONE KANAL plots
+    kind: site_coverage_slab
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (50%). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_pct: 50
+    check: "ground_coverage_pct <= 50 for ONE KANAL-category plots"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.ground_coverage.two_kanal
+    title: Maximum ground coverage -- TWO KANAL plots
+    kind: site_coverage_slab
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (45%). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_pct: 45
+    check: "ground_coverage_pct <= 45 for TWO KANAL-category plots"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.ground_coverage.above_two_kanal
+    title: Maximum ground coverage -- plots ABOVE TWO KANAL
+    kind: site_coverage_slab
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (35%). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_pct: 35
+    check: "ground_coverage_pct <= 35 for ABOVE TWO KANAL-category plots"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  # --- FAR (verified values; band boundaries unresolved, see header) -------------------------
+  - id: CHD2017.far.marla
+    title: Maximum FAR -- MARLA plots
+    kind: far_band
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (2.0). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    check: "far <= 2.0 for MARLA-category plots"
+    max_far: 2.0
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.far.one_kanal
+    title: Maximum FAR -- ONE KANAL plots
+    kind: far_band
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (1.5). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    check: "far <= 1.5 for ONE KANAL-category plots"
+    max_far: 1.5
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.far.two_kanal
+    title: Maximum FAR -- TWO KANAL plots
+    kind: far_band
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (1.25). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    check: "far <= 1.25 for TWO KANAL-category plots"
+    max_far: 1.25
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.far.above_two_kanal
+    title: Maximum FAR -- plots ABOVE TWO KANAL
+    kind: far_band
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (1.0). Band boundary not stated in this clause -- see header. enforced:false until resolved."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    check: "far <= 1.0 for ABOVE TWO KANAL-category plots"
+    max_far: 1.0
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  # --- Height (verified values; MARLA band also has an unresolved Phase-I/Phase-II ambiguity) -
+  - id: CHD2017.height.marla_phase1
+    title: Maximum building height -- MARLA plots, Phase-I
+    kind: height_max
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: >
+      Verified value (10.06 m / 33'-0", from the plinth level). Which of Phase-I/Phase-II applies
+      to a given plot is an external, area-specific fact not derivable from a floor plan alone --
+      an ambiguity_class: vintage-shaped question (CLAUDE.md §8), not a numeric-transcription
+      problem. No `height_max` kind exists in packages/rules/engine.py yet either way.
+      enforced:false pending both.
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_m: 10.06
+    check: "height_m <= 10.06 for MARLA-category plots in Phase-I"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.height.marla_phase2
+    title: Maximum building height -- MARLA plots, Phase-II
+    kind: height_max
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (9.83 m / 32'-3\", from the plinth level). Same Phase ambiguity and missing engine kind as CHD2017.height.marla_phase1 above."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_m: 9.83
+    check: "height_m <= 9.83 for MARLA-category plots in Phase-II"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  - id: CHD2017.height.kanal_main_building
+    title: Maximum building height -- ONE/TWO/ABOVE TWO KANAL plots, main building
+    kind: height_max
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (10.67 m / 35'-0\", from 0.30 m plinth height). No Phase ambiguity for this band, but still enforced:false -- no `height_max` kind exists yet in packages/rules/engine.py, and the plot-size band boundary itself is unresolved (see header)."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_m: 10.67
+    check: "height_m <= 10.67 for ONE/TWO/ABOVE TWO KANAL-category plots"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit, compounding]
+    enforced: false
+
+  # --- No. of storeys (verified value; no engine kind exists for a bare storey-count check) ---
+  - id: CHD2017.storeys.max
+    title: Maximum number of storeys
+    kind: storeys_max
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value (3). No `storeys_max` kind exists in packages/rules/engine.py yet -- BuildingModel.floors gives storey COUNT trivially, but no generic engine handler for this check kind exists today."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_storeys: 3
+    check: "len([f for f in floors if not f.is_stilt]) <= 3"
+    severity: major
+    compoundable: false
+    remedies: [geometric_edit]
+    enforced: false
+
+  # --- Room minimums (CLAUDE.md §7 priority 8) -- fully enforced, no band ambiguity ------------
+  - id: CHD2017.room.habitable_min_height
+    title: Habitable room (and kitchen) must be at least 2.75 m high below the ceiling
+    kind: room_min_height
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Room has no per-room height field; engine uses the room's Floor.height_m as proxy, same approach as puda_building_rules_1996.yaml. Habitable-room (2.75 m) and Kitchen (2.75 m) rows state the identical value, so both room_uses are checked by one rule."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    min_m: 2.75
+    room_uses: [bedroom, living, kitchen]
+    check: "floor.height_m >= 2.75  (for floors containing a habitable room or kitchen)"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: CHD2017.room.service_min_height
+    title: Toilet / WC / bath must be at least 2.29 m high
+    kind: room_min_height
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: >
+      Room has no per-room height field; engine uses the room's Floor.height_m as proxy. Toilet,
+      WC & Powder room, and Bath rows all state the identical 2.29 m value. Room.use has no
+      "toilet"/"powder_room" value in the frozen schema, so both are mapped onto "wc" here (a
+      disclosed simplification, not a silent one).
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    min_m: 2.29
+    room_uses: [bath, wc]
+    check: "floor.height_m >= 2.29  (for floors containing a bath/WC room)"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: CHD2017.room.light_ventilation_ratio
+    title: Window/opening area must be at least one-eighth of the habitable floor area
+    kind: light_ventilation_ratio
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    min_ratio: 0.125
+    check: "room.openings_area_sqm / room_area_sqm >= 0.125"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  # --- Basement (CLAUDE.md §7 priority 7) ------------------------------------------------------
+  - id: CHD2017.basement.min_height
+    title: Basement clear height must be at least 2.4 m below the beam/roof slab
+    kind: floor_min_height
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    min_m: 2.4
+    check: "basement_floor.height_m >= 2.4"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  # --- Staircase (CLAUDE.md §7 priority 10) ----------------------------------------------------
+  - id: CHD2017.staircase.min_width
+    title: Staircase must be at least 1.0 m wide
+    kind: staircase_min_width
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    min_m: 1.0
+    check: "min_rotated_rect_short_side(stair_room.polygon) >= 1.0"
+    severity: major
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: true
+
+  - id: CHD2017.staircase.max_riser
+    title: Staircase riser must not exceed 0.19 m
+    kind: staircase_riser
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value. No `staircase_riser` handler is wired in packages/rules/engine.py's _DISPATCH (same as puda_building_rules_1996.yaml's own staircase.riser row) -- no per-step riser geometry exists on the frozen schema."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    max_m: 0.19
+    check: "riser_m <= 0.19"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false
+
+  - id: CHD2017.staircase.min_tread
+    title: Staircase tread must be at least 0.25 m
+    kind: staircase_tread
+    source: {doc: chandigarh_building_rules_urban_2017, clause: "4.1", version: "2017-07-25", url: null}
+    status: verified
+    note: "Verified value. No `staircase_tread` handler is wired in packages/rules/engine.py's _DISPATCH (same as puda_building_rules_1996.yaml's own staircase.tread row)."
+    applies_when: {authority: CHANDIGARH, use: residential_plotted}
+    min_m: 0.25
+    check: "tread_m >= 0.25"
+    severity: minor
+    compoundable: true
+    remedies: [geometric_edit]
+    enforced: false

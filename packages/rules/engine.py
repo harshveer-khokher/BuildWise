@@ -7,7 +7,7 @@ only job is: load a rule pack (YAML, data -- not code) + a BuildingModel, and em
 correct outcome (CLAUDE.md §5) -- it is emitted whenever a required input is missing, never
 silently upgraded to "pass".
 
-Known schema-gap assumption (see packages/rules/packs/puda_1996.yaml header and INTEGRATION.md):
+Known schema-gap assumption (see packages/rules/packs/puda_building_rules_1996.yaml header and INTEGRATION.md):
 packages/schema/building_model.py has no field for a plot's overall use classification
 (residential_plotted / commercial / industrial / group_housing / public). Every rule in the
 1996 pack is authored `applies_when.use: residential_plotted`; `_applies` below treats every
@@ -786,33 +786,41 @@ def evaluate(model: BuildingModel, pack: dict) -> list[Finding]:
     findings: list[Finding] = []
 
     if model.jurisdiction.authority == "UNKNOWN":
-        # Jurisdiction routing is "step zero" (CLAUDE.md §2 glossary) -- every rule in this pack
-        # is authored `applies_when.authority: GMADA`, so _applies() would silently skip all of
-        # them below, leaving an empty findings list. An empty list reads as "0 issues found",
-        # which is indistinguishable from a clean drawing -- exactly the false-confidence outcome
-        # CLAUDE.md §5/§1 rule 6 exists to prevent. Surface it as one explicit finding instead of
-        # nothing, citing this pack's own applicability clause (which is literally the clause
-        # that says which areas/authorities it governs).
+        # Jurisdiction routing is "step zero" (CLAUDE.md §2 glossary) -- every rule in THIS pack
+        # is authored against one specific `applies_when.authority`, so _applies() would silently
+        # skip all of them below, leaving an empty findings list. An empty list reads as "0
+        # issues found", which is indistinguishable from a clean drawing -- exactly the
+        # false-confidence outcome CLAUDE.md §5/§1 rule 6 exists to prevent. Surface it as one
+        # explicit finding instead of nothing.
+        #
+        # Derived from the PACK itself (pack_id/jurisdiction/doc_id), not hardcoded to any one
+        # jurisdiction's pack -- this function runs against whichever pack run_checks() resolved
+        # (PUDA's, Chandigarh's, or any future one), and previously named "PUDA1996"/
+        # "puda_building_rules_1996" unconditionally even when evaluating a different pack, which
+        # would have misattributed the finding as soon as a second jurisdiction pack existed.
+        pack_id = pack.get("pack_id", "unknown_pack")
+        pack_jurisdiction = pack.get("jurisdiction", "an unspecified authority")
+        pack_doc_id = pack.get("doc_id", pack_id)
         findings.append(Finding(
-            rule_id="PUDA1996.jurisdiction.unknown",
+            rule_id=f"{pack_id}.jurisdiction.unknown",
             status="unknown",
             severity="blocking",
             title="Jurisdiction could not be determined",
             citation=Citation(
-                doc="puda_building_rules_1996", clause="3", version="1996-06-27",
+                doc=pack_doc_id, clause="n/a", version="n/a",
                 status="seed_unverified",
             ),
             observed=model.jurisdiction.authority,
-            required="GMADA, MC_KHARAR, or MC_ZIRAKPUR",
+            required=pack_jurisdiction,
             geometry_ref=None,
             compoundable=False,
             ambiguity_class="missing_input",
             remedies=[Remedy(
                 kind="zoning_revision_request",
-                description="Confirm the plot's sector/authority (GMADA vs. a municipal-council "
-                             "area) on the model-confirmation screen before relying on any "
-                             "finding below -- every rule in this pack is authored against GMADA "
-                             "jurisdiction and was not evaluated while authority is unknown.",
+                description=f"Confirm the plot's jurisdiction/authority before relying on any "
+                             f"finding below -- every rule in this pack ({pack.get('title', pack_id)}) "
+                             f"is authored against {pack_jurisdiction} and was not evaluated while "
+                             f"authority is unknown.",
             )],
         ))
         return findings

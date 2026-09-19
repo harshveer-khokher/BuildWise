@@ -1097,3 +1097,127 @@ transcription (§6.3, needs a two-pass vision transcription like PUDA's), rule s
 `Jurisdiction.authority` to include a Chandigarh value, and any engine/API/frontend wiring to
 actually let a user select Chandigarh as a jurisdiction. None of these were requested yet --
 this entry covers ingest only, per the user's own "this is the first step."
+
+## Second jurisdiction: Chandigarh rule pack + schema/engine wiring, step 2 (2026-09-20)
+
+User asked to "create whatever's required" so a real Chandigarh house drawing can be tested the
+moment it's uploaded. This is everything downstream of the ingest-only step above: a real,
+two-pass-verified rule pack, the schema extension that step deliberately deferred, two shared
+`packages/rules/engine.py` bugs found and fixed (both would have broken the moment a second pack
+existed, whether or not this specific work happened), and jurisdiction registration. Frontend:
+zero code changes needed -- confirmed by checking `IntakeScreen.jsx`'s jurisdiction dropdown,
+which already renders `/jurisdictions` generically; Chandigarh appears there automatically now
+that the API returns it.
+
+**Schema** (`packages/schema/building_model.py`): `Jurisdiction.authority` literal gained
+`"CHANDIGARH"`, announced here per CLAUDE.md §4 rather than silently changed. No other field
+touched.
+
+**Two shared-engine bugs found and fixed** (both were real bugs, not Chandigarh-specific -- a
+second pack of ANY kind would have hit them):
+1. **Pack resolution silently depended on a filename that didn't match its own `rule_pack`
+   value.** `packages/rules/packs/puda_1996.yaml` was named differently from the string
+   `"puda_building_rules_1996"` every `Jurisdiction.rule_pack` field actually holds, so every
+   resolution in `packages/rules/engine.py::run_checks`, `packages/api/checks.py::
+   _resolve_pack_path`, and this session's own `packages/rules/estimated_envelope.py::
+   _setback_formula_constants` was silently going through the "exactly one pack file exists,
+   use it" fallback path, never the real exact-match path the code was actually written to
+   prefer. Renamed the file to `puda_building_rules_1996.yaml` so exact-match resolution
+   actually resolves exact matches; the fallback is now a genuine fallback again. Updated the
+   one test with a hardcoded path (`tests/test_rules_engine.py::PACK_PATH`) and every docstring
+   reference. Full suite passed unchanged before and after -- this was a latent bug with zero
+   observable effect until a second pack existed, exactly the kind of thing worth fixing
+   proactively rather than leaving for the first person who adds a third pack to debug blind.
+2. **`evaluate()`'s jurisdiction-unknown fallback hardcoded `"PUDA1996"` / `"puda_building_rules_
+   1996"` / `"GMADA, MC_KHARAR, or MC_ZIRAKPUR"` regardless of which pack was actually being
+   evaluated.** Would have produced a Chandigarh-pack Finding falsely claiming to be a PUDA rule
+   citing the wrong document the moment any Chandigarh case had `authority: UNKNOWN`. Fixed to
+   read `pack_id`/`jurisdiction`/`doc_id`/`title` from the pack dict itself. Covered by
+   `tests/test_rules_engine_chandigarh.py::test_jurisdiction_unknown_reports_this_packs_own_
+   identity_not_puda`.
+
+**Also fixed**: `packages/rules/estimated_envelope.py::_setback_formula_constants`'s docstring
+and one test (`tests/test_estimated_envelope.py`) updated for the now-correct behaviour --
+an unresolved `rule_pack` id returns `None` rather than silently falling back to "the sole pack"
+now that two packs genuinely exist. Added a test confirming Chandigarh's own pack correctly
+returns `None` too (no `kind: setback_formula` rule exists in it at all -- see below).
+
+**New rule pack** (`packages/rules/packs/chandigarh_building_rules_urban_2017.yaml`), scope:
+clause 4.1 "Residential (PLOTTED)" only, mirroring PUDA's own residential-plotted scope. Built
+through the real two-pass transcribe+verify discipline (CLAUDE.md §6.4/§6.5) via two separate,
+fresh Claude subagent calls -- the verifier saw only the proposed value + raw clause text, never
+the transcriber's reasoning or quoted-fragment justification, per the strict contract in
+`tools/transcribe.py`/`tools/verify.py`. Audit trail committed:
+`corpus/extracted/chandigarh_building_rules_urban_2017/rule_synthesis/{transcribe_pass1.json,
+verify_pass1.json}`. Result: 102 proposed facts, 97 `match` (-> verified), 5 `not_stated` (->
+seed_unverified: the Set Backs row itself, and three MARLA-band "Optional, no capacity stated"
+cells for RWH/solar-water/solar-PV/servant-quarter). Zero `mismatch`/conflict verdicts.
+
+**20 rules in the pack; only 6 enforced today**, and that split is deliberate, not partial work
+abandoned:
+- **Enforced** (the engine actually runs these against a real BuildingModel): zoned-area
+  containment (correctly `unknown` without a real zoning plan, same as PUDA), habitable-room +
+  kitchen min height (2.75 m, via `Floor.height_m` as proxy, room_uses=[bedroom,living,kitchen]),
+  bath/WC/toilet min height (2.29 m, room_uses=[bath,wc] -- Room.use has no "toilet"/
+  "powder_room" value, a disclosed mapping), light/ventilation ratio (1/8), basement min height
+  (2.4 m), staircase min width (1.0 m). Verified end-to-end through the real HTTP `/checks/run`
+  route (not just the engine function directly) against a retargeted Mohali stub -- real
+  pass/violation/unknown verdicts came back, `engine_source: "real"`.
+- **Verified but `enforced: false`** (the number is confirmed accurate; the engine can't safely
+  apply it yet, for two different disclosed reasons, never silently guessed around):
+  1. *Plot-size band boundary unresolved*: ground coverage (65/50/45/35%), FAR (2.0/1.5/1.25/
+     1.0), height (10.06m Phase-I / 9.83m Phase-II / 10.67m for Kanal+), storeys (3), and
+     parking (1/2/3/6 ECS) all vary by plot-size CATEGORY (MARLA / ONE KANAL / TWO KANAL /
+     ABOVE TWO KANAL), but clause 4.1 never states the sq-metre boundary of each category
+     anywhere in its own text -- marla/kanal-to-sqm is a land-measurement-unit fact, not
+     something this clause states, and this document elsewhere expresses areas in sq yards for
+     other categories (Annexure-2, Group Housing's "600 Sq. yds.") which is a specific reason
+     not to assume a generic Punjab-revenue marla/kanal conversion applies unmodified to
+     Chandigarh's own residential-plotted categories without checking. Per CLAUDE.md §1 rule 1
+     ("never infer a number... from general knowledge"), this boundary is left unresolved rather
+     than assumed. **Concrete next step if/when this is worth resolving**: find an authoritative
+     Chandigarh-specific marla/kanal-to-sqm definition (ideally from this same corpus or a
+     Chandigarh Estate Office source) and run it through the same two-pass discipline, then flip
+     `enforced: true` on the 13 affected rules and add `plot_area_sqm: {min, max}` bands to each
+     (the engine's `site_coverage_slab`/`far_band` kinds already support banding generically --
+     see how PUDA1996.far.* does it -- no engine code change needed, only the YAML).
+  2. *No matching engine `kind` exists yet*: MARLA-band height's Phase-I/Phase-II ambiguity would
+     need this anyway even with a resolved band (which Phase applies to a given plot is an
+     external, area-specific fact -- an `ambiguity_class: vintage`-shaped question, not a
+     transcription problem), plus storeys-max, staircase riser/tread all have no generic
+     `_check_*`/`_DISPATCH` handler in `packages/rules/engine.py` -- same category of gap as
+     PUDA's own `courtyard.width_vs_mean_height`/`room.open_space_min_width`/`staircase.riser`/
+     `staircase.tread` rows, which are also verified-but-unenforced for the identical reason.
+  Every one of these stays fully citable in the pack and in any generated report -- `enforced:
+  false` only stops the ENGINE from applying it; it does not hide the verified fact.
+
+**Genuinely missing, not deferred**: setbacks. Unlike PUDA1996 clause 17 (a fraction-of-height
+formula), clause 4.1's Set Backs row states only "As per Zoning/ Frame Control" -- there is no
+formula in this jurisdiction's residential-plotted rules at all. `estimated_envelope.py`'s
+`_setback_formula_constants()` correctly returns `None` for this pack (no `kind:
+setback_formula` rule exists in it), so the setback-estimate feature (built for Mohali earlier
+this session) is honestly unavailable for Chandigarh cases -- not a bug, a real jurisdictional
+difference, covered by `test_setback_constants_none_for_a_pack_with_no_setback_formula_at_all`.
+
+**Jurisdiction registered** (`packages/api/main.py::_JURISDICTIONS`): `{"id": "chandigarh_ut",
+"label": "Chandigarh (UT)", "authority": "CHANDIGARH", "rule_pack":
+"chandigarh_building_rules_urban_2017", ...}`, with a `source_note` that discloses the enforced/
+verified-only split above rather than presenting it as equivalent to the Mohali pack. `GET
+/jurisdictions` now returns both; verified via `POST /checks/run` end-to-end against the real
+HTTP route (not just calling the engine function directly).
+
+**New tests**: `tests/test_rules_engine_chandigarh.py` (7 tests: pack loads with correct
+citations, enforced/unenforced split matches the documented gaps exactly, every finding cites
+the Chandigarh doc, containment is honestly unknown without a zoning plan, room/staircase/
+basement checks produce real pass/violation verdicts on a clean stub, unenforced rules never
+leak a finding, and the jurisdiction-unknown regression test above). Updated
+`tests/test_estimated_envelope.py` (2 tests fixed/added for the new pack-resolution behaviour).
+Full suite: 117/117 (110 pre-existing + 7 new).
+
+**What actually changes for the user's real Chandigarh test**: once their drawing is uploaded
+with jurisdiction set to Chandigarh, they will now get real room-height, light/ventilation,
+basement, and staircase-width findings (not "0 rules loaded"), an honest `unknown` for
+containment (same as Mohali until a zoning plan exists), and no ground-coverage/FAR/height/
+parking findings at all yet -- those numbers are sitting verified in the pack, just not wired to
+fire until the plot-size-band question above is resolved. This is a real, if partial, checking
+capability, not a placeholder.

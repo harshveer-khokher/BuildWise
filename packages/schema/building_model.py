@@ -26,7 +26,11 @@ Ring = list[Point]  # closed polygon ring
 
 
 class Jurisdiction(BaseModel):
-    authority: Literal["GMADA", "MC_KHARAR", "MC_ZIRAKPUR", "UNKNOWN"]
+    authority: Literal["GMADA", "MC_KHARAR", "MC_ZIRAKPUR", "CHANDIGARH", "UNKNOWN"]
+    """CHANDIGARH added 2026-09-20 for the second-jurisdiction onboarding (Chandigarh Building
+    Rules (Urban) 2017, doc_id chandigarh_building_rules_urban_2017) -- see INTEGRATION.md.
+    Deliberate, announced schema change per CLAUDE.md §4 ("announce before touching schema"),
+    not a silent one; every other field on this model is unchanged."""
     sector: str | None = None
     plot_no: str | None = None
     allotment_date: date | None = None

@@ -24,7 +24,7 @@ from packages.schema.building_model import BuildingModel
 from packages.rules.engine import evaluate_path, load_pack, run_checks
 
 STUB_DIR = ROOT / "packages" / "cases" / "stubs"
-PACK_PATH = ROOT / "packages" / "rules" / "packs" / "puda_1996.yaml"
+PACK_PATH = ROOT / "packages" / "rules" / "packs" / "puda_building_rules_1996.yaml"
 
 
 def load_stub(name: str) -> BuildingModel:

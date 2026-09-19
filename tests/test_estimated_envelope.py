@@ -100,13 +100,15 @@ def test_estimate_unavailable_without_a_confirmed_height():
     assert "no confirmed" in result["reason"]
 
 
-def test_setback_constants_fall_back_to_the_sole_pack_when_id_doesnt_match():
-    """Mirrors the same single-pack fallback convention already used by
-    engine.run_checks()/api's _resolve_pack_path -- an unrecognized rule_pack id still resolves
-    when exactly one pack file exists, rather than failing outright."""
+def test_setback_constants_unresolved_id_returns_none_now_that_two_packs_exist():
+    """The single-pack fallback (packages/rules/engine.py::run_checks and this module's own
+    mirror of it) only fires when exactly one pack file exists in packages/rules/packs/. Now
+    that a second pack exists (chandigarh_building_rules_urban_2017.yaml), an unrecognized
+    rule_pack id must resolve to nothing rather than silently guessing which of the two packs
+    was meant -- this is the correct behaviour change, not a regression."""
     from packages.rules.estimated_envelope import _setback_formula_constants
 
-    assert _setback_formula_constants("not_a_real_pack_id") == (0.25, 2.0, 0.2, 1.5)
+    assert _setback_formula_constants("not_a_real_pack_id") is None
 
 
 def test_setback_constants_match_the_verified_pack_values_exactly():
@@ -117,3 +119,12 @@ def test_setback_constants_match_the_verified_pack_values_exactly():
     fr_fraction, fr_min, side_fraction, side_min = _setback_formula_constants("puda_building_rules_1996")
     assert (fr_fraction, fr_min) == (0.25, 2.0)
     assert (side_fraction, side_min) == (0.2, 1.5)
+
+
+def test_setback_constants_none_for_a_pack_with_no_setback_formula_at_all():
+    """Chandigarh's residential-plotted setback is "As per Zoning/ Frame Control" -- no
+    fraction-of-height formula exists in that pack at all (by design, not omission). Confirms
+    the kind-based lookup correctly returns None instead of silently reusing PUDA's numbers."""
+    from packages.rules.estimated_envelope import _setback_formula_constants
+
+    assert _setback_formula_constants("chandigarh_building_rules_urban_2017") is None

@@ -139,10 +139,13 @@ def health() -> dict:
 # --------------------------------------------------------------------------------------------
 # Jurisdictions: a small, explicit registry rather than "one pack file = one jurisdiction"
 # (a real jurisdiction may need more than a bare pack filename someday -- a display name,
-# vintage rules, etc.). Static for now: exactly one real jurisdiction exists
-# (corpus/MANIFEST.json / packages/rules/packs/puda_1996.yaml, Mohali/GMADA). Structured so
-# adding a custom-bylaws-derived jurisdiction later (a real backend feature, not built in this
-# pass -- see INTEGRATION.md) is an append to this list, not a response-shape change.
+# vintage rules, etc.). Structured so adding a custom-bylaws-derived jurisdiction later (a real
+# backend feature, not built in this pass -- see INTEGRATION.md) is an append to this list, not
+# a response-shape change. Two real jurisdictions exist as of 2026-09-20 (see INTEGRATION.md
+# "Second jurisdiction" entries): Mohali/GMADA (full coverage) and Chandigarh (ingest + a
+# residential-plotted rule pack exist, but most numeric checks are enforced:false pending a
+# verified marla/kanal plot-size band conversion -- disclosed in source_note below rather than
+# presented as equivalent to the Mohali pack).
 # --------------------------------------------------------------------------------------------
 
 _JURISDICTIONS = [
@@ -152,6 +155,19 @@ _JURISDICTIONS = [
         "authority": "GMADA",
         "rule_pack": "puda_building_rules_1996",
         "source_note": "Punjab Urban Planning and Development Authority (Building) Rules, 1996",
+    },
+    {
+        "id": "chandigarh_ut",
+        "label": "Chandigarh (UT)",
+        "authority": "CHANDIGARH",
+        "rule_pack": "chandigarh_building_rules_urban_2017",
+        "source_note": (
+            "Chandigarh Building Rules (Urban) 2017, clause 4.1 (Residential Plotted). "
+            "Room/staircase/basement/light-ventilation checks run; ground coverage, FAR, "
+            "height and parking values are verified but not yet enforced pending a verified "
+            "marla/kanal plot-size band conversion, and setbacks have no generic formula in "
+            "this jurisdiction (governed by zoning/frame control per-plot)."
+        ),
     },
 ]
 
