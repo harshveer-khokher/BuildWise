@@ -1,25 +1,25 @@
 import { useState } from "react";
 import { confirmModel } from "../api";
+import { ConfidenceBadge } from "./StatusBadge";
 
 const ROOM_USES = ["bedroom", "living", "kitchen", "bath", "wc", "store", "stair", "garage", "other"];
 
-/** Model-confirmation screen (CLAUDE.md §5 Confidence semantics, §10.5 "freeze as truth").
+/** Model-confirmation screen (CLAUDE.md §5 Confidence semantics).
  *
- * confidence === "low" rooms must be user-confirmed before rules run. Wired against
- * s06_low_conf's shape: two rooms come in as confidence="low", one as "medium". This screen
- * lets the user correct the `use` label and confirms every touched room to confidence="high"
- * via POST /models/confirm, matching packages/api/main.py's RoomCorrection contract.
+ * Any room with confidence !== "high" must be reviewed here before checks run — this mirrors
+ * the parser's own honest uncertainty instead of quietly guessing on the user's behalf. Only
+ * reached when at least one such room exists; otherwise the app skips straight to Analyze.
  */
-export default function ConfirmScreen({ model, onConfirmed }) {
-  const [edits, setEdits] = useState({}); // key: "floorLevel:roomIndex" -> { use }
+export default function ConfirmScreen({ model, onConfirmed, onCancel }) {
+  const [edits, setEdits] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const lowOrMediumRooms = [];
+  const reviewRooms = [];
   model.floors.forEach((floor) => {
     floor.rooms.forEach((room, roomIndex) => {
       if (room.confidence !== "high") {
-        lowOrMediumRooms.push({ floorLevel: floor.level, roomIndex, room });
+        reviewRooms.push({ floorLevel: floor.level, roomIndex, room });
       }
     });
   });
@@ -32,7 +32,7 @@ export default function ConfirmScreen({ model, onConfirmed }) {
     setBusy(true);
     setError(null);
     try {
-      const corrections = lowOrMediumRooms.map(({ floorLevel, roomIndex, room }) => {
+      const corrections = reviewRooms.map(({ floorLevel, roomIndex, room }) => {
         const key = `${floorLevel}:${roomIndex}`;
         const use = edits[key]?.use ?? room.use;
         return { floor_level: floorLevel, room_index: roomIndex, use, confidence: "high" };
@@ -48,65 +48,67 @@ export default function ConfirmScreen({ model, onConfirmed }) {
 
   return (
     <section className="screen">
-      <h2>2. Confirm the parsed model</h2>
-      <p className="hint">
-        Low-confidence room labels must be confirmed before any rule runs (CLAUDE.md §5) — this
-        mirrors the parser's honest uncertainty rather than guessing on your behalf.
-      </p>
+      <div className="screen-header">
+        <p className="eyebrow">Before we check your plan</p>
+        <h2>Confirm a few room labels</h2>
+        <p className="lede">
+          The parser could not read these room labels with full confidence. Confirm or correct
+          each one — nothing runs against a guess.
+        </p>
+      </div>
 
-      <table className="room-table">
-        <thead>
-          <tr>
-            <th>Floor</th>
-            <th>Room</th>
-            <th>Confidence</th>
-            <th>Confirm as</th>
-          </tr>
-        </thead>
-        <tbody>
-          {model.floors.flatMap((floor) =>
-            floor.rooms.map((room, roomIndex) => {
-              const key = `${floor.level}:${roomIndex}`;
-              const needsReview = room.confidence !== "high";
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Floor</th>
+              <th>Parsed as</th>
+              <th>Confidence</th>
+              <th>Confirm as</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reviewRooms.map(({ floorLevel, roomIndex, room }) => {
+              const key = `${floorLevel}:${roomIndex}`;
               return (
-                <tr key={key} className={needsReview ? "row-flagged" : ""}>
-                  <td>{floor.level}</td>
+                <tr key={key}>
+                  <td>{floorLevel}</td>
                   <td>{room.use}</td>
-                  <td className={`confidence-${room.confidence}`}>{room.confidence}</td>
                   <td>
-                    {needsReview ? (
-                      <select
-                        value={edits[key]?.use ?? room.use}
-                        onChange={(e) => setUse(key, e.target.value)}
-                      >
-                        {ROOM_USES.map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="hint">already confirmed</span>
-                    )}
+                    <ConfidenceBadge confidence={room.confidence} />
+                  </td>
+                  <td>
+                    <select
+                      value={edits[key]?.use ?? room.use}
+                      onChange={(e) => setUse(key, e.target.value)}
+                      aria-label={`Confirm room use for floor ${floorLevel}, room ${roomIndex + 1}`}
+                    >
+                      {ROOM_USES.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                 </tr>
               );
-            })
-          )}
-        </tbody>
-      </table>
+            })}
+          </tbody>
+        </table>
+      </div>
 
-      {lowOrMediumRooms.length === 0 ? (
-        <p className="hint">All rooms are already high-confidence — nothing to confirm.</p>
-      ) : (
-        <p className="hint">{lowOrMediumRooms.length} room(s) flagged for confirmation.</p>
-      )}
-
-      <button onClick={confirmAndContinue} disabled={busy}>
-        {busy ? "Confirming…" : "Confirm & run checks"}
-      </button>
+      <p className="hint">{reviewRooms.length} room(s) need confirmation.</p>
 
       {error && <p className="error">{error}</p>}
+
+      <div className="actions">
+        <button type="button" className="button button--primary" onClick={confirmAndContinue} disabled={busy}>
+          {busy ? "Confirming…" : "Confirm & check my plan →"}
+        </button>
+        <button type="button" className="button button--ghost" onClick={onCancel} disabled={busy}>
+          Start over
+        </button>
+      </div>
     </section>
   );
 }

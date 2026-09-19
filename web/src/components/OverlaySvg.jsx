@@ -21,10 +21,11 @@ function collectBounds(features) {
   return { minX, minY, width: maxX - minX || 10, height: maxY - minY || 10 };
 }
 
+// Muted, architectural line drawing — not a map. Colors match the app's own palette tokens.
 const KIND_STYLE = {
-  plot_outline: { stroke: "#1d2939", fill: "none" },
-  zoned_area: { stroke: "#2970ff", fill: "#2970ff", fillOpacity: 0.06 },
-  floor_footprint: { stroke: "#98a2b3", fill: "#98a2b3", fillOpacity: 0.08 },
+  plot_outline: { stroke: "#211d19", fill: "none" },
+  zoned_area: { stroke: "#4d6a80", fill: "#4d6a80", fillOpacity: 0.06 },
+  floor_footprint: { stroke: "#a39a8a", fill: "#a39a8a", fillOpacity: 0.1 },
 };
 
 export default function OverlaySvg({ overlay }) {

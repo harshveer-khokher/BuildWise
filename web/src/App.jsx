@@ -1,62 +1,164 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
-import UploadScreen from "./components/UploadScreen";
+import IntakeScreen from "./components/IntakeScreen";
 import ConfirmScreen from "./components/ConfirmScreen";
-import FindingsScreen from "./components/FindingsScreen";
+import LoadingScreen from "./components/LoadingScreen";
+import ResultsScreen from "./components/ResultsScreen";
+import { runChecks, fetchOverlay, fetchReportMarkdown } from "./api";
 
-/** mohali-check web app (Track D, CLAUDE.md §11 Stage 1).
- *
- * Three-step flow proving the API contract end-to-end from a browser:
- *   upload/select a BuildingModel -> confirm low-confidence rooms -> findings + overlay + report.
- * No component library, no state manager — plain fetch() calls (see src/api.js) against
- * packages/api/main.py.
- */
+const STEPS = ["Upload", "Confirm", "Results"];
+
+function needsConfirmation(model) {
+  return model.floors.some((floor) => floor.rooms.some((room) => room.confidence !== "high"));
+}
+
+function currentStepIndex(step) {
+  if (step === "intake") return 0;
+  if (step === "confirm") return 1;
+  return 2; // loading, results, error all read as "on the way to / at" Results
+}
+
 export default function App() {
-  const [step, setStep] = useState("upload"); // "upload" | "confirm" | "findings"
+  const [step, setStep] = useState("intake"); // intake | confirm | loading | results | error
   const [model, setModel] = useState(null);
   const [caseLabel, setCaseLabel] = useState("");
+  const [checksResult, setChecksResult] = useState(null);
+  const [reportMarkdown, setReportMarkdown] = useState(null);
+  const [overlay, setOverlay] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [retryToken, setRetryToken] = useState(0);
 
-  function handleModelLoaded(loadedModel, label) {
+  function handleModelReady(loadedModel, label) {
     setModel(loadedModel);
     setCaseLabel(label);
-    setStep("confirm");
+    setStep(needsConfirmation(loadedModel) ? "confirm" : "loading");
   }
 
   function handleConfirmed(confirmedModel) {
     setModel(confirmedModel);
-    setStep("findings");
+    setStep("loading");
   }
 
   function restart() {
     setModel(null);
     setCaseLabel("");
-    setStep("upload");
+    setChecksResult(null);
+    setReportMarkdown(null);
+    setOverlay(null);
+    setErrorMessage(null);
+    setStep("intake");
   }
+
+  useEffect(() => {
+    if (step !== "loading" || !model) return;
+    let cancelled = false;
+
+    async function run() {
+      try {
+        const result = await runChecks(model);
+        if (cancelled) return;
+        setChecksResult(result);
+
+        // Both are best-effort extras: a report fetch failure is fatal to this screen's core
+        // purpose (the report is a required deliverable), but the overlay is a nice-to-have —
+        // its failure should not block the findings the user actually asked for.
+        const markdown = await fetchReportMarkdown(model, result.findings);
+        if (cancelled) return;
+        setReportMarkdown(markdown);
+
+        try {
+          const overlayResult = await fetchOverlay(model, result.findings);
+          if (!cancelled) setOverlay(overlayResult);
+        } catch {
+          if (!cancelled) setOverlay(null);
+        }
+
+        if (!cancelled) setStep("results");
+      } catch (err) {
+        if (!cancelled) {
+          setErrorMessage(String(err.message || err));
+          setStep("error");
+        }
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, model, retryToken]);
 
   return (
     <div className="app-shell">
-      <header>
-        <h1>mohali-check</h1>
-        <p className="hint">
-          Pre-submission compliance checker for Greater Mohali building drawings. Not a GMADA/PUDA
-          approval or sanction — see the report footer.
-        </p>
-        <nav className="steps">
-          <span className={step === "upload" ? "step active" : "step"}>1. Upload</span>
-          <span className={step === "confirm" ? "step active" : "step"}>2. Confirm</span>
-          <span className={step === "findings" ? "step active" : "step"}>3. Findings</span>
-        </nav>
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            ▦
+          </span>
+          <span className="brand-name">BuildWise</span>
+        </div>
+        <p className="brand-tagline">Build with confidence.</p>
+        {step !== "results" && (
+          <nav className="steps" aria-label="Progress">
+            {STEPS.map((label, i) => (
+              <span key={label} className={i === currentStepIndex(step) ? "step step--active" : "step"}>
+                {i + 1}. {label}
+              </span>
+            ))}
+          </nav>
+        )}
       </header>
 
-      <main>
-        {step === "upload" && <UploadScreen onModelLoaded={handleModelLoaded} />}
+      <main className="app-main">
+        {step === "intake" && <IntakeScreen onModelReady={handleModelReady} />}
         {step === "confirm" && model && (
-          <ConfirmScreen model={model} onConfirmed={handleConfirmed} />
+          <ConfirmScreen model={model} onConfirmed={handleConfirmed} onCancel={restart} />
         )}
-        {step === "findings" && model && (
-          <FindingsScreen model={model} caseLabel={caseLabel} onRestart={restart} />
+        {step === "loading" && <LoadingScreen />}
+        {step === "error" && (
+          <section className="screen">
+            <div className="screen-header">
+              <p className="eyebrow">Something went wrong</p>
+              <h2>The check could not be completed</h2>
+            </div>
+            <p className="error">{errorMessage}</p>
+            <div className="actions">
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setStep("loading");
+                  setRetryToken((t) => t + 1);
+                }}
+              >
+                Try again
+              </button>
+              <button type="button" className="button button--ghost" onClick={restart}>
+                Start over
+              </button>
+            </div>
+          </section>
+        )}
+        {step === "results" && model && checksResult && (
+          <ResultsScreen
+            model={model}
+            caseLabel={caseLabel}
+            checksResult={checksResult}
+            reportMarkdown={reportMarkdown}
+            overlay={overlay}
+            onRestart={restart}
+          />
         )}
       </main>
+
+      <footer className="app-footer">
+        <p>
+          BuildWise performs a pre-submission check only. It is not an approval, not a sanction,
+          and not a certificate of compliance by GMADA, PUDA, or any authority.
+        </p>
+      </footer>
     </div>
   );
 }
