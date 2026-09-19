@@ -353,11 +353,10 @@ async def assemble_case_route(request: Request):
                 from packages.rules.estimated_envelope import estimate_buildable_envelope
 
                 estimated_envelope = estimate_buildable_envelope(
-                    ground_floor_path=tmp_path / sheets[ground_role],
+                    model=model,
                     front_elevation_path=tmp_path / sheets[front_role],
                     plot_width_m=plot_width_m,
                     plot_length_m=plot_length_m,
-                    rule_pack_id=model.jurisdiction.rule_pack,
                 )
 
     return {

@@ -3,8 +3,9 @@
 Never confused with the real containment check: this module has no access to, and never sets,
 BuildingModel.zoned_area. These tests guard that it (a) produces sane numbers against a real
 drawing with a confirmed height, (b) infers orientation correctly (verified against the same
-h01 footprint-vs-elevation-width correlation checked by hand during development), and (c) fails
-honestly (available=False) rather than guessing when an input is missing.
+h01 footprint-vs-elevation-width correlation checked by hand during development), (c) fails
+honestly (available=False) rather than guessing when an input is missing, and (d) the size-based
+fit check flags an oversized footprint without claiming a verified position check.
 """
 
 from __future__ import annotations
@@ -16,22 +17,26 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import pytest
 
+from packages.parser.semantics import assemble_case
 from packages.rules.estimated_envelope import estimate_buildable_envelope
+from packages.schema import BuildingModel, Floor, Jurisdiction
 
 CASES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages" / "cases"
 H01_DIR = CASES_DIR / "real" / "h01"
+H01_META = H01_DIR / "h01.meta.json"
 
 requires_h01 = pytest.mark.skipif(not H01_DIR.exists(), reason="h01 real case not present (gitignored)")
 
 
 @requires_h01
 def test_estimate_against_h01_real_drawing():
+    model = assemble_case(H01_META)
+    model.jurisdiction.authority = "GMADA"
     result = estimate_buildable_envelope(
-        ground_floor_path=H01_DIR / "ground.pdf",
+        model=model,
         front_elevation_path=H01_DIR / "elevation_front.pdf",
         plot_width_m=12.5,
         plot_length_m=20.0,
-        rule_pack_id="puda_building_rules_1996",
     )
     assert result["available"] is True
     assert result["height_m_used"] == pytest.approx(10.058, abs=0.01)
@@ -43,51 +48,56 @@ def test_estimate_against_h01_real_drawing():
     assert result["side_setback_m"] == pytest.approx(max(10.058 * 0.2, 1.5), abs=0.01)
     assert result["estimated_envelope_area_sqm"] > 0
     assert "ESTIMATE, not a verified zoning check" in result["note"]
+    # h01's own footprint (~8.32m x 11.73m) is smaller than a 12.5x20m plot's estimated
+    # envelope, so this should read as a plausible (size-based, unconfirmed-position) fit.
+    assert result["fit_status"] == "plausible_fit"
+    assert len(result["per_floor_fit"]) == len(model.floors)
+
+
+@requires_h01
+def test_estimate_flags_oversized_footprint_as_likely_exceeding():
+    model = assemble_case(H01_META)
+    model.jurisdiction.authority = "GMADA"
+    result = estimate_buildable_envelope(
+        model=model,
+        front_elevation_path=H01_DIR / "elevation_front.pdf",
+        plot_width_m=9.0,   # only slightly bigger than the ~8.32m footprint width before setbacks
+        plot_length_m=13.0,
+    )
+    assert result["available"] is True
+    assert result["fit_status"] == "likely_exceeds"
+    assert any(not f["fits_by_size"] for f in result["per_floor_fit"])
 
 
 @requires_h01
 def test_estimate_unavailable_when_setbacks_exceed_plot_size():
+    model = assemble_case(H01_META)
+    model.jurisdiction.authority = "GMADA"
     result = estimate_buildable_envelope(
-        ground_floor_path=H01_DIR / "ground.pdf",
+        model=model,
         front_elevation_path=H01_DIR / "elevation_front.pdf",
         plot_width_m=3.0,   # smaller than 2x the side setback alone
         plot_length_m=4.0,
-        rule_pack_id="puda_building_rules_1996",
     )
     assert result["available"] is False
     assert "no positive buildable area" in result["reason"]
 
 
 def test_estimate_unavailable_without_a_confirmed_height():
-    """A blank synthetic elevation has no dimension chain at all -- extract_overall_height_m
-    returns None, and this must fail honestly rather than assume a height."""
-    import fitz
-
-    doc = fitz.open()
-    doc.new_page()
-    tmp_elev = pathlib.Path(__file__).resolve().parent / "_scratch_blank_elevation.pdf"
-    doc.save(tmp_elev)
-    doc.close()
-
-    doc2 = fitz.open()
-    doc2.new_page()
-    tmp_ground = pathlib.Path(__file__).resolve().parent / "_scratch_blank_ground.pdf"
-    doc2.save(tmp_ground)
-    doc2.close()
-
-    try:
-        result = estimate_buildable_envelope(
-            ground_floor_path=tmp_ground,
-            front_elevation_path=tmp_elev,
-            plot_width_m=12.5,
-            plot_length_m=20.0,
-            rule_pack_id="puda_building_rules_1996",
-        )
-        assert result["available"] is False
-        assert "no confirmed height" in result["reason"]
-    finally:
-        tmp_elev.unlink(missing_ok=True)
-        tmp_ground.unlink(missing_ok=True)
+    """A model with no floor heights at all must fail honestly rather than assume one."""
+    model = BuildingModel(
+        source="vector_pdf",
+        jurisdiction=Jurisdiction(authority="GMADA", rule_pack="puda_building_rules_1996"),
+        floors=[Floor(level=0, is_stilt=False, footprint=[[0, 0], [8, 0], [8, 11], [0, 11], [0, 0]], height_m=None)],
+    )
+    result = estimate_buildable_envelope(
+        model=model,
+        front_elevation_path=H01_DIR / "elevation_front.pdf" if H01_DIR.exists() else pathlib.Path("nonexistent.pdf"),
+        plot_width_m=12.5,
+        plot_length_m=20.0,
+    )
+    assert result["available"] is False
+    assert "no confirmed" in result["reason"]
 
 
 def test_setback_constants_fall_back_to_the_sole_pack_when_id_doesnt_match():
