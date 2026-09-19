@@ -592,6 +592,22 @@ def _check_light_ventilation_ratio(rule: dict, model: BuildingModel) -> list[Fin
                     compoundable=False, ambiguity_class="extraction", remedies=[],
                 ))
                 continue
+            if room.openings_area_sqm <= 0:
+                # A hard 0.0 is indistinguishable from "not measured" for a habitable room --
+                # every PDF-derived room currently has openings_area_sqm hardcoded to 0.0
+                # (packages/parser/pdf_ingest.py does not extract window/door area at all yet;
+                # see its module docstring). Reporting this as a violation would be a guaranteed
+                # false positive on every habitable room from a PDF/raster source, which is
+                # exactly the failure CLAUDE.md §10.6 calls out as unacceptable ("precision on
+                # violation must be near 100%"). Treat an unmeasured/zero opening as an
+                # extraction gap, not evidence of non-compliance.
+                findings.append(Finding(
+                    rule_id=rule["id"], status="unknown", severity=rule["severity"],
+                    title=rule["title"], citation=citation, observed=None,
+                    required=rule["min_ratio"], geometry_ref=room.polygon,
+                    compoundable=False, ambiguity_class="extraction", remedies=[],
+                ))
+                continue
             ratio = room.openings_area_sqm / poly.area
             ok = ratio >= rule["min_ratio"] - 1e-9
             findings.append(Finding(
