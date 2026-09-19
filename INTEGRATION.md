@@ -110,6 +110,44 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 
 ---
 
+## Follow-up (2026-09-19): yard-zone labels are a real, unextracted setback signal
+
+`packages/parser/pdf_ingest.py::_NON_ROOM_LABELS` currently discards `FRONTYARD`, `BACKYARD`,
+`GREEN`, `PARKING HALL` labels entirely (CLAUDE.md-style honesty: not representable as an
+enclosed `Room`). But their labeled dimensions are real, legible text on the sheet and are
+plausible setback distances -- e.g. h01's `BACKYARD 10'-10½" x 24'-1½"` (≈3.3m) and front
+`GREEN 9'-9" x 13'-10½"` (≈3.0m) sit exactly in the range CLAUDE.md's setback-formula rules
+expect. If a yard zone spans the full distance from building wall to plot line (the standard
+convention for showing setback compliance on a plan), its shorter/perpendicular dimension IS the
+setback -- this is not confirmed geometrically here, just a plausible reading of labeled text,
+same trust level as the room-label dimensions already used elsewhere in this file.
+
+**Not implemented, deliberately, for now**: `PUDA1996.setback.front_rear_formula` and
+`.side_formula` need *both* an actual distance and `_building_height_m(model)` (the formula is
+`height × fraction`). Height stays `None` without a section sheet (confirmed as the intended
+behavior in this session -- elevation-derived height was explicitly considered and rejected as a
+substitute, see below), so extracting the yard-zone distance today would sit unused with zero
+visible effect on any finding. Revisit this once a section sheet exists for either house; at that
+point, wiring `FRONTYARD`/`BACKYARD` zone depth into `_setback_actual_m()` as a low-confidence
+candidate (clearly flagged as "yard-label-derived, not a plot-line measurement") should unblock
+real setback findings on both houses without needing full plot-boundary vector tracing.
+
+## Follow-up (2026-09-19): elevation-derived height considered and rejected
+
+Confirmed a real, legible vertical dimension chain exists on h01's `elevation_front.pdf`
+(`10'-3", 2'-3", 7', 10'-3"...`, sheet explicitly states "all levels are in feet & inch") that
+could technically be parsed into a height estimate (h02's equivalent sheet has the same
+font-encoding corruption already flagged elsewhere in this file, so it's h01-only regardless).
+Asked whether to trust this as a height source when no section sheet exists (with `confidence:
+low` and an explicit "from elevation, not section" citation note) versus keeping CLAUDE.md's
+current rule that elevations are cross-check only, never a height source. **Decision: keep the
+current rule as-is.** Height (and everything gated on it -- room min height, setback formulas,
+height-vs-road, roof projection recede) stays `status=unknown` on both real houses until an actual
+section sheet is supplied. Do not revisit this without asking again -- it was a deliberate
+product-risk call, not an oversight.
+
+---
+
 ## Stage 2 integration (2026-09-19): first real end-to-end run, two engine bugs found and fixed
 
 Ran `packages/parser/semantics.assemble_case()` -> `packages/rules/engine.run_checks()` against
