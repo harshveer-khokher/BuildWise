@@ -219,9 +219,16 @@ async def assemble_case_route(request: Request):
         is treated as an explicit override for that role, taking precedence over auto-inference
         -- kept for programmatic/API callers who already know their sheet roles.
       - plain text fields: "authority" (e.g. "GMADA") and optionally "rule_pack" override.
+      - optional plain text fields "plot_width_m" and "plot_length_m" (already converted to
+        metres by the caller -- CLAUDE.md §1 rule 4, unit conversion happens at the display
+        layer, not here): when BOTH are given, also computes an advisory
+        packages.rules.estimated_envelope estimate (see that module's docstring) using this
+        upload's own ground-floor and front-elevation sheets. Never touches BuildingModel.
+        zoned_area or the real containment check either way.
 
     Response: {"model": BuildingModel, "resolved_roles": {filename: role},
-               "unresolved": [{"filename", "reason"}, ...]}
+               "unresolved": [{"filename", "reason"}, ...],
+               "estimated_envelope": dict | None}
     A file that couldn't be classified is never silently dropped or guessed at -- it's reported
     in "unresolved" so the user can see it wasn't used, same "unknown over fake precision"
     principle as everywhere else in this project (CLAUDE.md §1 rule 6).
@@ -244,6 +251,8 @@ async def assemble_case_route(request: Request):
     auto_uploads: list[tuple[str, Any]] = []  # (original_filename, UploadFile), field name "files"
     authority = None
     rule_pack = None
+    plot_width_m: float | None = None
+    plot_length_m: float | None = None
 
     with tempfile.TemporaryDirectory(prefix="buildwise_upload_") as tmpdir:
         tmp_path = Path(tmpdir)
@@ -268,6 +277,10 @@ async def assemble_case_route(request: Request):
                 authority = value
             elif field_name == "rule_pack":
                 rule_pack = value
+            elif field_name == "plot_width_m":
+                plot_width_m = float(value)
+            elif field_name == "plot_length_m":
+                plot_length_m = float(value)
 
         # Save every auto-upload to a safe temp filename and classify it from its own content.
         original_to_safe: dict[str, str] = {}
@@ -325,7 +338,34 @@ async def assemble_case_route(request: Request):
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"could not assemble uploaded sheets: {exc}") from exc
 
-    return {"model": model, "resolved_roles": resolved_roles, "unresolved": unresolved}
+        estimated_envelope = None
+        if plot_width_m is not None and plot_length_m is not None:
+            ground_role = "ground" if "ground" in sheets else None
+            front_role = "elevation_front" if "elevation_front" in sheets else next(
+                (r for r in sheets if r.startswith("elevation")), None
+            )
+            if ground_role is None or front_role is None:
+                estimated_envelope = {
+                    "available": False,
+                    "reason": "need both a ground floor plan and a front (or any) elevation sheet to compute this estimate.",
+                }
+            else:
+                from packages.rules.estimated_envelope import estimate_buildable_envelope
+
+                estimated_envelope = estimate_buildable_envelope(
+                    ground_floor_path=tmp_path / sheets[ground_role],
+                    front_elevation_path=tmp_path / sheets[front_role],
+                    plot_width_m=plot_width_m,
+                    plot_length_m=plot_length_m,
+                    rule_pack_id=model.jurisdiction.rule_pack,
+                )
+
+    return {
+        "model": model,
+        "resolved_roles": resolved_roles,
+        "unresolved": unresolved,
+        "estimated_envelope": estimated_envelope,
+    }
 
 
 @app.post("/models/confirm")

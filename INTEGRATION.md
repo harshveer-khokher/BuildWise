@@ -110,6 +110,56 @@ harness, then extend to h01/h02 once/if DXF versions arrive.
 
 ---
 
+## Advisory setback-formula buildable-envelope estimate (2026-09-20)
+
+`packages/rules/estimated_envelope.py::estimate_buildable_envelope` -- a SEPARATE, clearly-labeled
+estimate of the buildable envelope, computed from clause 17's generic setback formula (front/rear
+>= max(height*0.25, 2m), side >= max(height*0.2, 1.5m), read live from the verified pack, never
+duplicated as literals) applied to the user's entered plot width x length, now that a real
+confirmed height exists (see the height-extraction entry below).
+
+**This never touches `BuildingModel.zoned_area` or the real containment check.** CLAUDE.md's
+glossary is explicit that the official, GMADA-issued zoning plan can override generic setbacks
+(corner-plot rules, road-widening reservations, etc.) -- populating the real `zoned_area` field
+with a formula-derived guess would make the flagship containment check look "solved" by an
+unverified approximation. This is exposed as its own `estimated_envelope` object instead
+(`available: true/false` + numbers + a note spelling out exactly how it was computed), for
+`POST /cases/assemble` to return alongside (not instead of) the real model when the caller also
+supplies `plot_width_m`/`plot_length_m`.
+
+**Orientation is inferred, never asked of the user** (per explicit instruction): the ground
+floor's own footprint has a width and a depth; the front elevation's own drawn width (real-world,
+via the same `extract_drawing_bbox`/`estimate_scale_pts_per_m` already used for plan sheets) says
+which of those is the road-facing one (a front elevation is a face-on view of exactly that
+dimension); whichever of the user's entered plot width/length is numerically closer to that same
+real-world figure is inferred as the plot's frontage edge. Verified on h01: footprint 8.32m x
+11.73m, front elevation drawn width 7.45m -> correctly resolves to the FOOTPRINT'S WIDTH axis
+being road-facing (7.45 is far closer to 8.32 than to 11.73), and for a 12.5m x 20.0m plot,
+correctly resolves to the plot's *width* input as frontage. If either the footprint or the front
+elevation can't be read cleanly, this returns `available: false` with the reason -- never a guess.
+
+**A claim considered and rejected during this work**: a screenshot showed `lvl -90"` labels on
+h01's front elevation, and it was suggested these might be a road-setback distance. They are not,
+and can't be -- an elevation is a frontal projection (width x height only); the depth axis (how
+far back from the road the building sits) is not represented in that view at all, from any
+elevation. `-90"` is almost certainly another entry in the same per-floor `lvl` vertical-level
+convention documented in the height-extraction entry below (probably a stone-clad wainscot/plinth
+band's bottom edge), not a horizontal distance. Not implemented; flagged here so it isn't
+mistakenly revisited as if it were a real, extractable setback value.
+
+**Wired into `POST /cases/assemble`** (`packages/api/main.py`): optional `plot_width_m`/
+`plot_length_m` text fields (already-converted-to-metres by the caller, per CLAUDE.md §1 rule 4)
+trigger the estimate inline, using that same upload's own `ground`/`elevation_front`-role sheets
+(still on disk in the request's temp directory at that point) -- response gains an
+`estimated_envelope` key (`null` if plot size wasn't given). Tested end-to-end against real h01
+sheets via the actual HTTP-shaped multipart flow, plus 5 direct unit tests for the underlying
+function (orientation correctness, honest failure when setbacks exceed the plot, honest failure
+without a confirmed height, and that the setback constants are read live from the pack rather than
+hardcoded). Full suite: 103/103.
+
+**Not yet done**: no frontend UI surfaces this estimate. The backend contract exists and is
+tested; wiring a results-screen panel for it is a natural, comparatively small follow-up.
+
 ## Height from an elevation's own labeled dimension, confirmed against the real building (2026-09-20)
 
 **Reverses the earlier "keep elevations cross-check only" decision recorded above (2026-09-19) --

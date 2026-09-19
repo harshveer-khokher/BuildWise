@@ -20,6 +20,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+import pytest
 from fastapi.testclient import TestClient
 
 from packages.api.main import app
@@ -253,6 +254,50 @@ def test_cases_assemble_rejects_unsupported_file_type():
         files={"ground": ("notes.txt", b"not a drawing", "text/plain")},
     )
     assert resp.status_code == 422
+
+
+H01_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages" / "cases" / "real" / "h01"
+requires_h01 = pytest.mark.skipif(not H01_DIR.exists(), reason="h01 real case not present (gitignored)")
+
+
+@requires_h01
+def test_cases_assemble_computes_estimated_envelope_when_plot_size_given():
+    """The advisory setback-formula estimate (packages/rules/estimated_envelope.py) is computed
+    inline by /cases/assemble when plot_width_m/plot_length_m are given, using this same
+    upload's own ground floor + front elevation sheets -- never touches the real containment
+    check or BuildingModel.zoned_area."""
+    handles = [open(H01_DIR / f"{name}.pdf", "rb") for name in ("ground", "elevation_front")]
+    try:
+        resp = client.post(
+            "/cases/assemble",
+            files=[("files", (h.name.split("/")[-1].split("\\")[-1], h, "application/pdf")) for h in handles],
+            data={"authority": "GMADA", "plot_width_m": "12.5", "plot_length_m": "20.0"},
+        )
+    finally:
+        for h in handles:
+            h.close()
+    assert resp.status_code == 200, resp.text
+    envelope = resp.json()["estimated_envelope"]
+    assert envelope["available"] is True
+    assert envelope["height_m_used"] == pytest.approx(10.058, abs=0.01)
+    assert envelope["estimated_envelope_area_sqm"] > 0
+    assert "ESTIMATE, not a verified zoning check" in envelope["note"]
+
+
+@requires_h01
+def test_cases_assemble_estimated_envelope_is_none_without_plot_size():
+    handles = [open(H01_DIR / f"{name}.pdf", "rb") for name in ("ground", "elevation_front")]
+    try:
+        resp = client.post(
+            "/cases/assemble",
+            files=[("files", (h.name.split("/")[-1].split("\\")[-1], h, "application/pdf")) for h in handles],
+            data={"authority": "GMADA"},
+        )
+    finally:
+        for h in handles:
+            h.close()
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["estimated_envelope"] is None
 
 
 def _make_pdf_with_title(sheet_title: str) -> bytes:
