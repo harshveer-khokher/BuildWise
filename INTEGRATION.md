@@ -1335,3 +1335,67 @@ suite now covers both branches correctly regardless of which machine runs it. Fu
 
 Real DWG/DXF height extraction against an actual building is still the one open item -- send a
 real file when ready.
+
+## DXF/DWG multi-layout sheet expansion (2026-09-20)
+
+Follow-on from the DWG work above. A user's real test upload (`bungalw.dwg`, one file) got
+rejected with "no usable sheet files were included" -- not because DWG itself was refused (it
+converted fine), but because role inference for DXF/DWG is filename-only (no title-block reader
+for DXF) and the filename gave no keyword to match. User's response: **"a single dwg file has all
+information and multiple layouts/elevations... naming is redundant. it should accept whatever is
+received if only one file."** "Layouts" here is literal AutoCAD terminology -- paperspace tabs --
+confirmed against `ezdxf`: a DXF/DWG can carry several named layout tabs (e.g. "GROUND FLOOR
+PLAN", "ELEVATION FRONT") entirely independent of modelspace, each queryable exactly like
+modelspace (`layout.query("DIMENSION")` works identically).
+
+**Fix, in order of preference (most confident first), not just "accept anything":**
+
+1. **Layout-name-based role inference** (`packages/parser/dxf_ingest.py::list_layout_names`,
+   `packages/api/role_inference.py::guess_layout_roles`, new): if a DXF has 2+ non-empty
+   paperspace layout tabs, each tab's own name is matched against the same keyword table PDF
+   title blocks use ("ground floor", "elevation", "site plan", ...). This is content, not
+   metadata about the upload -- the DXF/DWG analogue of reading a PDF's title block, and
+   deliberately higher-trust than the existing filename fallback. `list_layout_names` excludes
+   "Model" and any layout with zero entities (`ezdxf.new()`, and apparently most real DWGs via
+   ODA's own conversion, always carry an empty default "Layout1" even when paperspace was never
+   used -- an empty tab is noise, not a signal).
+2. **Single-file "combined" fallback** (`packages/api/main.py`'s `/cases/assemble`, new role
+   `"combined"` in `packages/parser/semantics.py`): only when (a) exactly one file was uploaded
+   overall AND (b) it has no named layout tabs to try AND (c) neither content nor filename
+   matched anything -- use the whole file's modelspace as a single best-effort floor (level=0)
+   instead of rejecting the upload. Deliberately NOT applied when several unmatched layout tabs
+   exist (blending distinct-but-unidentified tabs into one floor risks mixing geometry that was
+   never meant to share a coordinate frame) or when multiple files were uploaded (ambiguous which
+   one is "the" file). The resulting `BuildingModel.assumptions` says explicitly that the
+   level=0 assignment is unverified -- this is a policy relaxation on *acceptance*, not a relaxation
+   of CLAUDE.md §1 rule 6 on *numeric confidence*: coverage/FAR still use the real footprint either
+   way; storey-specific checks are told plainly not to trust the level.
+   `resolved_roles["<filename>"] = "combined"` (it WAS used) -- deliberately NOT also added to
+   `unresolved` (api.js's own documented contract: "a file in `unresolved` was not used"; double-
+   listing would tell the user their only file was silently dropped when it wasn't).
+
+**Plumbing**: one physical file can now back several roles, so `dxf_ingest.ingest_dxf()` and
+`extract_overall_height_m()` both gained an optional `layout: str | None` parameter (default
+`None` = modelspace, unchanged existing behaviour). `packages/parser/sheet_ref.py` (new, tiny)
+encodes a role's sheet reference as `"filename#layout=NAME"` when a layout is involved, so
+`meta.json`'s `sheets` dict values stay plain strings (no schema change to every existing case's
+meta.json) while `semantics.assemble_case()` and `main.py`'s estimated-envelope lookup can decode
+back to `(filename, layout)` wherever they turn a sheet reference into a file path.
+
+**New tests**: `tests/test_dxf_layouts.py` (6 tests: empty-default-layout exclusion, named-layout
+listing in tab order, `ingest_dxf(layout=...)` reads that layout not modelspace,
+`extract_overall_height_m(layout=...)` likewise, `guess_layout_roles` keyword matching +
+honestly-unmatched tabs, and a full `/cases/assemble` end-to-end pass: one uploaded file with an
+arbitrary filename, a "GROUND FLOOR PLAN" layout and a "FRONT ELEVATION" layout, both correctly
+resolved with no filename hint at all). `tests/test_api.py`'s old
+`test_cases_assemble_reports_unclassifiable_file_instead_of_guessing` (which asserted the now-
+deliberately-changed reject-on-no-match behavior) was replaced with
+`test_cases_assemble_single_unclassifiable_file_falls_back_to_combined` plus a new
+`test_cases_assemble_rejects_multiple_unclassifiable_files` confirming the fallback still doesn't
+fire for >1 file. Full suite: 141/141.
+
+**Still untested against a real multi-layout DWG** -- built and verified against synthetic
+`ezdxf.new()` files (no real sample available), same caveat as the DXF height-extraction work
+above. Once a real `bungalw.dwg`-like file is available, confirm its actual layout tab names
+match (or extend) the keyword table, and that layout entities converted by the real ODA File
+Converter carry through with the same structure as `ezdxf.new()`'s in-memory layouts do.

@@ -334,16 +334,41 @@ def test_cases_assemble_auto_infers_role_from_pdf_title_block():
     assert body["model"]["jurisdiction"]["authority"] == "GMADA"
 
 
-def test_cases_assemble_reports_unclassifiable_file_instead_of_guessing():
-    """A DXF's role can only be filename-inferred (no title-block reader for DXF), and a
-    filename with no recognizable keyword must be reported unresolved, never silently
-    assigned a role or silently dropped."""
+def test_cases_assemble_single_unclassifiable_file_falls_back_to_combined():
+    """A lone DXF whose filename gives no role hint (no title-block reader for DXF) and which
+    has no named layout tabs to fall back on either must NOT be rejected outright -- it's the
+    only file the user gave us, so per-file naming is redundant; it's used as a single
+    best-effort 'combined' source instead, honestly flagged as unverified rather than silently
+    presented as a confirmed ground floor."""
     with open(SYNTH_DXF, "rb") as f:
         resp = client.post(
             "/cases/assemble",
             files={"files": ("s_smoke.dxf", f, "application/octet-stream")},
         )
-    assert resp.status_code == 400  # nothing resolved -> no usable sheets at all
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["resolved_roles"]["s_smoke.dxf"] == "combined"
+    # It was used (not "unresolved" -- that would tell the user their only file was dropped),
+    # but the model's own assumptions still honestly flag the low confidence.
+    assert body["unresolved"] == []
+    assumptions = " ".join(body["model"]["assumptions"])
+    assert "combined" in assumptions
+    assert "NOT verified" in assumptions
+
+
+def test_cases_assemble_rejects_multiple_unclassifiable_files():
+    """The single-file 'combined' fallback must not kick in when there's more than one file --
+    blending several unidentified files' geometry into one floor would risk mixing content that
+    was never meant to share a coordinate frame, so this stays an honest rejection."""
+    with open(SYNTH_DXF, "rb") as f1, open(SYNTH_DXF, "rb") as f2:
+        resp = client.post(
+            "/cases/assemble",
+            files=[
+                ("files", ("s_smoke.dxf", f1, "application/octet-stream")),
+                ("files", ("another_unnamed.dxf", f2, "application/octet-stream")),
+            ],
+        )
+    assert resp.status_code == 400
     assert "recognizable" in resp.json()["detail"].lower()
 
 

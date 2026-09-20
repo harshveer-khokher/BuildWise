@@ -69,13 +69,43 @@ def _polyline_points(entity: Any) -> tuple[list[list[float]], bool]:
     return pts, closed
 
 
-def ingest_dxf(path: str | Path) -> dict[str, Any]:
-    """Parse a DXF file's modelspace into raw layer/entity data.
+def list_layout_names(dxf_path: str | Path) -> list[str]:
+    """Names of every non-empty paperspace layout in this DXF, in tab order, excluding "Model"
+    (modelspace) and any layout with zero entities.
+
+    A single DWG/DXF commonly holds a whole sheet set as separate named layout tabs (e.g.
+    "GROUND FLOOR PLAN", "ELEVATION FRONT", "SECTION A-A") rather than as separate uploaded
+    files. Reading those tab names is the DXF/DWG analogue of reading a PDF's title block --
+    real content the drafter wrote into the file itself, not a guess based on what the uploader
+    happened to name the outer file (role_inference.py's filename fallback is lower-trust
+    precisely because a filename is metadata about the upload, not the drawing).
+
+    An empty tab is excluded rather than reported as "found but blank": `ezdxf.new()` (and,
+    per ODA File Converter's own output, most real DWGs) always carries a default "Layout1"
+    paperspace even when the drafter never used paperspace at all -- an empty layout carries no
+    role signal and would just be noise to a caller trying to match tab names against keywords.
+    """
+    path = Path(dxf_path)
+    doc = ezdxf.readfile(str(path))
+    names: list[str] = []
+    for name in doc.layouts.names_in_taborder():
+        if name == "Model":
+            continue
+        layout = doc.layouts.get(name)
+        if next(iter(layout), None) is not None:
+            names.append(name)
+    return names
+
+
+def ingest_dxf(path: str | Path, layout: str | None = None) -> dict[str, Any]:
+    """Parse a DXF file's modelspace (or, if `layout` is given, that named paperspace layout --
+    see `list_layout_names`) into raw layer/entity data.
 
     Returns a plain dict (JSON-serialisable except for nothing -- all floats/strings/bools):
 
         {
           "path": str,
+          "layout": str | None,        # which paperspace layout was read, None = modelspace
           "insunits": int,             # DXF $INSUNITS header code, 0 = unspecified
           "layers": {raw_name: {"category": str, "entity_count": int}},
           "polylines": [{"layer", "category", "closed", "points": [[x,y], ...]}],
@@ -88,7 +118,7 @@ def ingest_dxf(path: str | Path) -> dict[str, Any]:
     """
     path = Path(path)
     doc = ezdxf.readfile(str(path))
-    msp = doc.modelspace()
+    msp = doc.layouts.get(layout) if layout else doc.modelspace()
     insunits = int(doc.header.get("$INSUNITS", 0))
 
     layers: dict[str, dict[str, Any]] = {}
@@ -159,6 +189,7 @@ def ingest_dxf(path: str | Path) -> dict[str, Any]:
 
     return {
         "path": str(path),
+        "layout": layout,
         "insunits": insunits,
         "layers": layers,
         "polylines": polylines,
@@ -200,7 +231,9 @@ def _is_vertical_dimension(angle: float | None) -> bool:
     return abs((angle % 180.0) - 90.0) <= _VERTICAL_ANGLE_TOLERANCE_DEG
 
 
-def extract_overall_height_m(dxf_path: str | Path) -> tuple[float | None, list[dict] | None, str]:
+def extract_overall_height_m(
+    dxf_path: str | Path, layout: str | None = None
+) -> tuple[float | None, list[dict] | None, str]:
     """DXF analogue of pdf_ingest.extract_overall_height_m(): reads a verified overall height
     off an elevation sheet's own DIMENSION entities -- never a heuristic line-count estimate.
 
@@ -240,9 +273,9 @@ def extract_overall_height_m(dxf_path: str | Path) -> tuple[float | None, list[d
         if insunits not in _INSUNITS_TO_METRES else ""
     )
 
-    msp = doc.modelspace()
+    space = doc.layouts.get(layout) if layout else doc.modelspace()
     vertical: list[dict[str, Any]] = []
-    for e in msp.query("DIMENSION"):
+    for e in space.query("DIMENSION"):
         try:
             measurement = e.get_measurement()
         except Exception:

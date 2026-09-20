@@ -269,10 +269,10 @@ async def assemble_case_route(request: Request):
     import tempfile
     from pathlib import Path
 
-    from packages.api.role_inference import RoleGuess, assign_roles, guess_role
+    from packages.api.role_inference import RoleGuess, assign_roles, guess_layout_roles, guess_role
 
     try:
-        from packages.parser import semantics
+        from packages.parser import dxf_ingest, semantics, sheet_ref
     except Exception as exc:
         raise HTTPException(
             status_code=501,
@@ -322,6 +322,11 @@ async def assemble_case_route(request: Request):
         # Save every auto-upload to a safe temp filename and classify it from its own content.
         original_to_safe: dict[str, str] = {}
         guesses: dict[str, RoleGuess] = {}
+        # original_filename -> safe_name, only for a file with NO internal layout structure to
+        # try (a single flat modelspace drawing) -- the only files eligible for the "combined"
+        # single-file fallback below, since blending several distinct-but-unmatched layout tabs
+        # into one floor could mix geometry that was never meant to share a coordinate frame.
+        flat_singleton_safe_name: dict[str, str] = {}
         for idx, (original_filename, upload_file) in enumerate(auto_uploads):
             suffix = Path(original_filename).suffix.lower() or ".pdf"
             if suffix not in (".pdf", ".dxf", ".dwg"):
@@ -338,28 +343,64 @@ async def assemble_case_route(request: Request):
             else:
                 safe_name = f"auto_{idx}{suffix}"
                 (tmp_path / safe_name).write_bytes(await upload_file.read())
-            original_to_safe[original_filename] = safe_name
-            guesses[original_filename] = guess_role(tmp_path / safe_name, original_filename)
 
-        auto_role_map, unresolved = assign_roles(guesses)  # role -> original_filename
+            layout_names = (
+                dxf_ingest.list_layout_names(tmp_path / safe_name) if safe_name.endswith(".dxf") else []
+            )
+            if len(layout_names) >= 2:
+                # One physical file (typically a DWG converted to DXF) holds a whole sheet set
+                # as separate named paperspace layout tabs -- expand it into one virtual sheet
+                # per layout, guessed from that layout's own tab name rather than the outer
+                # filename (role_inference.guess_layout_roles; naming the uploaded file is
+                # redundant here since the file's own content already says what each part is).
+                for layout_name, guess in guess_layout_roles(tmp_path / safe_name).items():
+                    # Readable as-is in the frontend's "files used" list (ResultsScreen.jsx
+                    # renders this key verbatim), e.g. "bungalw.dwg (GROUND FLOOR PLAN layout)".
+                    virtual_key = f"{original_filename} ({layout_name} layout)"
+                    original_to_safe[virtual_key] = sheet_ref.encode(safe_name, layout_name)
+                    guesses[virtual_key] = guess
+            else:
+                original_to_safe[original_filename] = safe_name
+                guesses[original_filename] = guess_role(tmp_path / safe_name, original_filename)
+                flat_singleton_safe_name[original_filename] = safe_name
+
+        auto_role_map, unresolved = assign_roles(guesses)  # role -> guess key (filename or virtual layout key)
 
         resolved_roles: dict[str, str] = {}
-        for role, original_filename in auto_role_map.items():
+        for role, guess_key in auto_role_map.items():
             if role in sheets:
                 # An explicit override for this role already won -- report the unused guess
                 # rather than silently dropping it (never guess past a stated conflict).
                 unresolved.append({
-                    "filename": original_filename,
+                    "filename": guess_key,
                     "reason": f"inferred as '{role}', but that role was already explicitly provided -- this file was not used",
                 })
                 continue
-            sheets[role] = original_to_safe[original_filename]
-            resolved_roles[original_filename] = role
+            sheets[role] = original_to_safe[guess_key]
+            resolved_roles[guess_key] = role
+
+        if not sheets and len(auto_uploads) == 1 and len(flat_singleton_safe_name) == 1:
+            # Exactly one file was uploaded, it has no internal sheet-tab structure to fall back
+            # on, and neither its content nor its filename hinted at a role. Per-file naming is
+            # redundant for a single upload that already IS the whole submission -- rejecting it
+            # outright would just push the user into inventing a filename that means nothing.
+            # Use it as a single best-effort combined source instead: still no fake precision
+            # (the report will say plainly that role/level was never verified), just not a
+            # blanket refusal to look at the only file the user gave us.
+            # Resolved, not unresolved -- the file WAS used (role_inference.py's own contract:
+            # api.js docs "a file in unresolved was not used"), just not with the same
+            # confidence as a keyword match. That caveat lives in the model's own `assumptions`
+            # (assemble_case's "combined" branch above), not in `unresolved`, so the frontend
+            # doesn't tell the user their only file was dropped when it wasn't.
+            original_filename, safe_name = next(iter(flat_singleton_safe_name.items()))
+            sheets["combined"] = safe_name
+            resolved_roles[original_filename] = "combined"
+            unresolved = [u for u in unresolved if u["filename"] != original_filename]
 
         if not sheets:
             raise HTTPException(
                 status_code=400,
-                detail="no usable sheet files were included -- upload at least one recognizable drawing (PDF or DXF)",
+                detail="no usable sheet files were included -- upload at least one recognizable drawing (PDF, DXF, or DWG)",
             )
 
         meta = {
@@ -395,9 +436,10 @@ async def assemble_case_route(request: Request):
             else:
                 from packages.rules.estimated_envelope import estimate_buildable_envelope
 
+                front_filename, _front_layout = sheet_ref.decode(sheets[front_role])
                 estimated_envelope = estimate_buildable_envelope(
                     model=model,
-                    front_elevation_path=tmp_path / sheets[front_role],
+                    front_elevation_path=tmp_path / front_filename,
                     plot_width_m=plot_width_m,
                     plot_length_m=plot_length_m,
                 )

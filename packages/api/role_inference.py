@@ -16,6 +16,7 @@ from typing import NamedTuple
 
 import fitz  # PyMuPDF
 
+from packages.parser import dxf_ingest
 from packages.parser.pdf_ingest import extract_title_block
 
 # Ordered most-specific-first: "front elevation" must match before generic "elevation" would.
@@ -98,7 +99,32 @@ def guess_role(file_path: Path, original_filename: str) -> RoleGuess:
             return RoleGuess(role, "filename", f"guessed from filename {original_filename!r} (DXF has no readable title block)")
         return RoleGuess(None, "filename", f"filename {original_filename!r} doesn't suggest a known sheet type, and DXF has no readable title block")
 
-    return RoleGuess(None, "filename", f"unsupported file type {suffix!r} (only .pdf and .dxf are ingested)")
+    return RoleGuess(None, "filename", f"unsupported file type {suffix!r} (only .pdf, .dxf, and .dwg are ingested)")
+
+
+def guess_layout_roles(file_path: Path) -> dict[str, RoleGuess]:
+    """For a DXF holding multiple named paperspace layout tabs (a single DWG/DXF containing a
+    whole sheet set as separate layouts -- "GROUND FLOOR PLAN", "ELEVATION FRONT" -- rather than
+    as separate uploaded files), guess each layout's role from its own tab name.
+
+    This is higher-trust than the filename fallback above: a layout tab name is content the
+    drafter wrote into the file itself, the DXF/DWG analogue of a PDF's title block, not metadata
+    about the upload. Returns {layout_name: RoleGuess}; empty if the file has no non-empty
+    paperspace layouts (the common case -- most drawings are a single flat modelspace)."""
+    guesses: dict[str, RoleGuess] = {}
+    for name in dxf_ingest.list_layout_names(file_path):
+        role = _match_keywords(name.replace("_", " ").replace("-", " "))
+        if role:
+            guesses[name] = RoleGuess(
+                role, "layout_name", f"guessed from this file's own layout tab name {name!r}"
+            )
+        else:
+            guesses[name] = RoleGuess(
+                None, "layout_name",
+                f"layout tab {name!r} doesn't match a known sheet type "
+                "(floor plan / elevation / site / zoning / section)",
+            )
+    return guesses
 
 
 def assign_roles(guesses: dict[str, RoleGuess]) -> tuple[dict[str, str], list[dict[str, str]]]:

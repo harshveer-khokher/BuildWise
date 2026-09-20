@@ -38,7 +38,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from packages.parser import dxf_ingest, pdf_ingest
+from packages.parser import dxf_ingest, pdf_ingest, sheet_ref
 from packages.schema import BuildingModel, Floor, Jurisdiction, Room
 
 # Known plan-sheet role names -> Floor.level. Extend as new offices' naming turns up.
@@ -70,9 +70,14 @@ def _room_use_from_raw(raw_use: str) -> str:
     return raw_use if raw_use in allowed else "other"
 
 
-def _ingest_sheet(sheet_path: Path) -> dict[str, Any]:
+def _ingest_sheet(sheet_path: Path, layout: str | None = None) -> dict[str, Any]:
     """Dispatch to pdf_ingest or dxf_ingest by file extension and normalise the result shape to
     what the plan-assembly code below expects: {"footprint", "rooms", "title_block", "notes"}.
+
+    `layout` selects a specific named paperspace layout inside a DXF (see
+    dxf_ingest.list_layout_names) instead of its default modelspace -- used when one uploaded
+    DWG/DXF file holds several sheets as separate layout tabs. Ignored for PDF, which has no
+    equivalent concept.
     """
     suffix = sheet_path.suffix.lower()
     if suffix == ".pdf":
@@ -84,9 +89,10 @@ def _ingest_sheet(sheet_path: Path) -> dict[str, Any]:
             "notes": [f"[{sheet_path.name}] {n}" for n in raw["notes"]],
         }
     if suffix == ".dxf":
-        raw = dxf_ingest.ingest_dxf(sheet_path)
+        raw = dxf_ingest.ingest_dxf(sheet_path, layout=layout)
+        sheet_label = f"{sheet_path.name}#layout={layout}" if layout else sheet_path.name
         wall_polys = dxf_ingest.closed_polylines_by_category(raw, "wall")
-        notes = [f"[{sheet_path.name}] dxf_ingest: found {len(wall_polys)} closed 'wall'-category polyline(s)."]
+        notes = [f"[{sheet_label}] dxf_ingest: found {len(wall_polys)} closed 'wall'-category polyline(s)."]
         footprint = None
         if wall_polys:
             # Largest-by-shoelace-area closed wall polyline stands in for the exterior footprint
@@ -97,7 +103,7 @@ def _ingest_sheet(sheet_path: Path) -> dict[str, Any]:
             footprint = max(wall_polys, key=lambda pts: Polygon(pts).area)
         else:
             notes.append(
-                f"[{sheet_path.name}] dxf_ingest: no closed polyline on a 'wall' layer; "
+                f"[{sheet_label}] dxf_ingest: no closed polyline on a 'wall' layer; "
                 "footprint left unset for this sheet."
             )
         rooms = []
@@ -132,7 +138,7 @@ def _ingest_sheet(sheet_path: Path) -> dict[str, Any]:
 
 
 def _classify_role(role: str) -> str:
-    if role in _PLAN_LEVELS:
+    if role in _PLAN_LEVELS or role == "combined":
         return "plan"
     if _ELEVATION_ROLE_RE.match(role):
         return "elevation"
@@ -165,15 +171,23 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
     any_dxf = False
     any_pdf = False
 
-    for role, filename in sheets.items():
+    for role, ref in sheets.items():
         kind = _classify_role(role)
         if kind != "plan":
             continue
-        if role not in _PLAN_LEVELS:
+        if role == "combined":
+            # A single uploaded file with no distinguishable sheet-role structure (no matching
+            # layout tabs, no filename hint) -- see role_inference.guess_layout_roles / main.py's
+            # single-file fallback. level=0 is an unverified placeholder, not a read result;
+            # said explicitly below rather than silently presenting it as a confirmed ground
+            # floor.
+            level, is_stilt = 0, False
+        elif role not in _PLAN_LEVELS:
             assumptions.append(f"assemble_case: plan role '{role}' not in the known level table; skipped.")
             continue
+        else:
+            level, is_stilt = _PLAN_LEVELS[role]
 
-        level, is_stilt = _PLAN_LEVELS[role]
         if level in seen_levels:
             raise ValueError(
                 f"assemble_case({meta_path}): both role '{seen_levels[level]}' and '{role}' map "
@@ -181,13 +195,24 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
                 "plan sheet must map to a distinct level)."
             )
 
+        filename, layout = sheet_ref.decode(ref)
         sheet_path = case_dir / filename
-        ingested = _ingest_sheet(sheet_path)
+        ingested = _ingest_sheet(sheet_path, layout=layout)
         any_dxf = any_dxf or sheet_path.suffix.lower() == ".dxf"
         any_pdf = any_pdf or sheet_path.suffix.lower() == ".pdf"
         assumptions.extend(ingested["notes"])
         if ingested["title_block"]:
             plan_title_blocks.append(ingested["title_block"])
+
+        if role == "combined":
+            assumptions.append(
+                "assemble_case: role 'combined' -- this file could not be split into distinct "
+                "sheet roles (no layout tab or filename matched a known sheet type), so its "
+                "geometry was used as a single best-effort floor (level=0) instead of rejecting "
+                "the upload. This level assignment is NOT verified -- confirm it before trusting "
+                "any per-floor result (coverage/FAR use the whole footprint either way, but "
+                "storey-specific checks assume this really is the ground floor)."
+            )
 
         if ingested["footprint"] is None:
             assumptions.append(
@@ -247,7 +272,8 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
     valid_elevation_estimates: list[int] = []
     valid_heights_m: list[tuple[str, float, list]] = []  # (role, height_m, matched_segments)
     for role in elevation_roles:
-        sheet_path = case_dir / sheets[role]
+        filename, layout = sheet_ref.decode(sheets[role])
+        sheet_path = case_dir / filename
         suffix = sheet_path.suffix.lower()
 
         if suffix == ".pdf":
@@ -256,7 +282,7 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
             role_ok = pdf_ingest.sheet_title_matches_role(title, _ELEVATION_TITLE_KEYWORDS)
             if not role_ok:
                 assumptions.append(
-                    f"assemble_case: sheet role '{role}' ({sheets[role]}) is declared an elevation "
+                    f"assemble_case: sheet role '{role}' ({filename}) is declared an elevation "
                     f"in meta.json, but its title-block text reads {title!r}, which does not "
                     "confirm that (extraction ambiguity: possible sheet-role mismatch, CLAUDE.md "
                     "§10.1 -- treat this sheet as unverified, do not use it for the storey "
@@ -274,19 +300,19 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
                 valid_heights_m.append((role, height_m, segments))
 
         elif suffix == ".dxf":
-            # No title-block text to re-verify the declared role against (dxf_ingest.py doesn't
-            # read title blocks at all -- role_inference.py's own DXF fallback is filename-only,
-            # already lower-trust than PDF's title-block read) -- the declared role from
-            # meta.json/role inference is trusted directly rather than re-checked here.
-            # No storey-count heuristic exists for DXF yet (PDF's is itself just a rough vector-
-            # line-density estimate; not built for DXF, not claimed to be equivalent).
-            height_m, segments, height_note = dxf_ingest.extract_overall_height_m(sheet_path)
+            # No title-block text to re-verify the declared role against for a bare filename
+            # match, but when this sheet came from a named layout tab (layout is not None) that
+            # tab name itself already IS the content-derived signal (role_inference.
+            # guess_layout_roles) -- the declared role is trusted directly either way, same as
+            # before. No storey-count heuristic exists for DXF yet (PDF's is itself just a rough
+            # vector-line-density estimate; not built for DXF, not claimed to be equivalent).
+            height_m, segments, height_note = dxf_ingest.extract_overall_height_m(sheet_path, layout=layout)
             assumptions.append(f"assemble_case: [{role}] {height_note}")
             if height_m is not None:
                 valid_heights_m.append((role, height_m, segments))
         else:
             assumptions.append(
-                f"assemble_case: sheet role '{role}' ({sheets[role]}) has an unrecognised "
+                f"assemble_case: sheet role '{role}' ({filename}) has an unrecognised "
                 f"extension {suffix!r} -- skipped for storey-count/height cross-check."
             )
 
