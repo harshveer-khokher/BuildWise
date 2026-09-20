@@ -24,6 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from packages.api.main import app
+from packages.parser import dwg_convert
 
 client = TestClient(app)
 
@@ -365,10 +366,14 @@ def test_cases_assemble_auto_infer_yields_to_explicit_override():
     assert any(u["filename"] == "auto_ground.pdf" for u in body["unresolved"])
 
 
-def test_cases_assemble_dwg_upload_fails_loudly_without_the_converter_installed():
-    """The real, honest state of this environment: no ODA File Converter is installed, so a
-    .dwg upload must fail with a clear, actionable 502 -- never silently skip the file, never
-    pretend it worked, never crash with an unrelated traceback."""
+def test_cases_assemble_dwg_upload_fails_loudly_without_the_converter_installed(monkeypatch):
+    """A .dwg upload on a machine with no ODA File Converter must fail with a clear, actionable
+    502 -- never silently skip the file, never pretend it worked, never crash with an unrelated
+    traceback. Forced via monkeypatch rather than relying on the ambient dev/CI machine actually
+    lacking the converter -- once it's installed (as it now is in this environment), the fail-loud
+    path is still exercised, just via a different, equally legitimate branch (see the sibling test
+    below)."""
+    monkeypatch.setattr(dwg_convert, "find_oda_converter", lambda: None)
     resp = client.post(
         "/cases/assemble",
         files={"files": ("ground floor plan.dwg", b"not a real dwg", "application/octet-stream")},
@@ -378,6 +383,24 @@ def test_cases_assemble_dwg_upload_fails_loudly_without_the_converter_installed(
     detail = resp.json()["detail"]
     assert "opendesign.com" in detail
     assert "CHD_ODA_CONVERTER_PATH" in detail
+
+
+def test_cases_assemble_dwg_upload_fails_loudly_on_garbage_content_when_converter_is_installed():
+    """When a real ODA File Converter IS installed (as in this environment) and the uploaded
+    .dwg bytes aren't a real drawing, the converter runs, produces no output, and that must
+    still surface as a fail-loud 502 -- never a silent skip, never a fake pass. This only
+    exercises the real assertion when the converter is actually present; otherwise it's a no-op
+    so this test file doesn't become environment-dependent in the other direction."""
+    if not dwg_convert.is_available():
+        pytest.skip("ODA File Converter not installed in this environment")
+    resp = client.post(
+        "/cases/assemble",
+        files={"files": ("ground floor plan.dwg", b"not a real dwg", "application/octet-stream")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert "did not produce a DXF" in detail
 
 
 def test_cases_assemble_dwg_upload_succeeds_once_converted(monkeypatch):

@@ -1309,3 +1309,29 @@ real ODA File Converter binary itself -- install it and re-test once available; 
 extraction against a real drawing -- needs the same "does this match the real building" check the
 PDF version got from the user earlier this session, once a real DXF/DWG elevation with dimensions
 is available.
+
+**Update, same day -- ODA File Converter now installed and verified real, not mocked.** User
+installed it (`C:\Program Files\ODA\ODAFileConverter 27.1.0\ODAFileConverter.exe`);
+`find_oda_converter()` auto-detected it via the default-path glob with no env var needed,
+`is_available()` -> `True`. Ran a real, non-mocked conversion: built a valid DXF with `ezdxf`
+(a wall polyline plus a 10.06 m vertical DIMENSION), saved it under a `.dwg` filename, and called
+`convert_dwg_to_dxf()` directly against the real binary -- succeeded, produced valid DXF output
+(`$ACADVER` AC1032). Closed the loop by feeding that real-converter output back through our own
+`ingest_dxf()` / `extract_overall_height_m()`: 1 polyline, 1 dimension, height extracted as
+exactly `10.06` m -- a genuine end-to-end pass with real tooling on both sides (real converter,
+real ingest code), not a synthetic-only check.
+
+This flipped one existing test's assumption: `test_cases_assemble_dwg_upload_fails_loudly_without_
+the_converter_installed` had been asserting the "converter not found, install from opendesign.com"
+message, which was only true because no converter was installed on this machine *at the time it
+was written*. Now that one genuinely is installed, garbage `.dwg` bytes correctly take a
+*different* fail-loud branch instead (converter runs, produces no output, "did not produce a
+DXF... may be corrupt") -- the fail-loud discipline held, the test's environment assumption didn't.
+Fixed by monkeypatching `find_oda_converter` to force the not-installed branch explicitly (matching
+the existing pattern in `test_dwg_convert.py`), and added a sibling test
+(`test_cases_assemble_dwg_upload_fails_loudly_on_garbage_content_when_converter_is_installed`) that
+only runs its real assertion when a converter is actually present (`pytest.skip` otherwise), so the
+suite now covers both branches correctly regardless of which machine runs it. Full suite: 134/134.
+
+Real DWG/DXF height extraction against an actual building is still the one open item -- send a
+real file when ready.
