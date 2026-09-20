@@ -1221,3 +1221,91 @@ containment (same as Mohali until a zoning plan exists), and no ground-coverage/
 parking findings at all yet -- those numbers are sitting verified in the pack, just not wired to
 fire until the plot-size-band question above is resolved. This is a real, if partial, checking
 capability, not a placeholder.
+
+## DWG upload + DXF height extraction (2026-09-20)
+
+User asked two things: build DWG->DXF conversion into the pipeline (so a native .dwg upload
+"just works"), and asked why height isn't calculated from DXF elevations the way it is from PDF
+ones -- "is it not required?" Checked the actual code before answering: `dxf_ingest.py`'s own
+comment said outright that DIMENSION entities were "out of scope for this hackathon build...
+simply not collected, not mis-collected" -- confirming this was a real engineering gap (all this
+session's parser deep-dives happened to be on real PDF drawings, h01/h02), not a deliberate "DXF
+doesn't need this" decision. Height is exactly as useful from a DXF elevation as a PDF one.
+
+**DWG conversion** (`packages/parser/dwg_convert.py`, new): wraps the free ODA File Converter
+(https://www.opendesign.com/guestfiles/oda_file_converter) -- ezdxf cannot read native DWG at
+all (a permanent limitation shared by every open-source DXF library; DWG is an undocumented
+proprietary format), and ezdxf's own FAQ recommends exactly this tool. **This is a real external
+dependency, not something pip-installable** -- checked this machine directly and confirmed the
+converter is NOT currently installed here. `find_oda_converter()` checks an env var
+(`CHD_ODA_CONVERTER_PATH`) then a best-effort list of default install paths;
+`convert_dwg_to_dxf()` fails loudly with the exact install link and env-var instructions
+(`DwgConversionError`) rather than silently skipping conversion -- verified this fail-loud path
+end-to-end through the real `/cases/assemble` route (502, with the install instructions in the
+response body). The success path was verified against a **fake converter** that mimics the real
+ODA CLI's exact contract (same positional args, writes a same-stem .dxf into the output folder)
+rather than a bare mock, so the actual subprocess/staging/readback code is exercised, not just
+its call signature -- the one thing that remains genuinely unverified is the real ODA binary
+itself, which can only be checked once it's actually installed somewhere. **User: install it
+from the link above (or point `CHD_ODA_CONVERTER_PATH` at wherever you already have it) before
+sending a real .dwg -- the upload will otherwise correctly fail with that same message.**
+
+Wired end-to-end: `.dwg` accepted in both `/cases/assemble` upload paths (explicit-named-role
+field and the generic auto-inferred `files` field), converted to a temp `.dxf` immediately on
+receipt (`_stage_dwg_as_dxf` in `packages/api/main.py`) so every downstream step -- role
+inference, `semantics.assemble_case`, DXF height extraction below -- only ever sees a `.dxf` file
+and never needs its own DWG-awareness. Frontend (`web/src/lib/roles.js`'s `ACCEPTED_EXTENSIONS`,
+`FileUploadZone.jsx`'s file input `accept` + hint text) updated to allow and mention `.dwg`; no
+other frontend change needed since `api.js`'s existing error handling already surfaces any HTTP
+error's `detail` field generically, 502 included.
+
+**DXF height extraction** (`dxf_ingest.py::extract_overall_height_m`, new): the DXF analogue of
+`pdf_ingest.py::extract_overall_height_m`, wired into `semantics.py`'s elevation cross-check loop
+by branching on file extension instead of skipping every non-PDF sheet outright. Turns out to be
+**more reliable than the PDF version, not less**: a PDF elevation has no semantic "this is a
+measurement" object, so that function has to reconstruct a dimension's value by clustering nearby
+vector line positions and OCR'd text tokens (the whole "chain + bracket" algorithm from earlier
+this session). A DXF DIMENSION entity IS the measurement -- `ezdxf`'s `get_measurement()` returns
+the exact value AutoCAD itself computed when the drawing was made, so there's no text-parsing
+fragility to guard against at all. Algorithm: collect roughly-vertical DIMENSION entities (line
+angle within 5 degrees of 90); if one clearly dominates (>=1.5x the next-largest), it's the
+verified height directly; otherwise, mirrors the PDF version's own chain-vs-bracket verification
+(does some contiguous run of smaller dimensions, ordered by position, sum to within 2cm of the
+largest?) using exact DXF values instead of reconstructed ones. Returns `(None, None, note)`
+rather than guessing when the sheet has no real DIMENSION entities at all (a real possibility --
+some offices manually draw LINE+TEXT mimicking a dimension instead of using AutoCAD's actual
+DIMENSION object; that fallback case is not handled). **Untested against a real DWG/DXF elevation
+as of authoring** -- no sample was available -- verified only against synthetic DXF files built
+via `ezdxf.new()`. Needs the same real-drawing verification the PDF version got earlier this
+session (a real building's confirmed height, checked by the user) before being fully trusted.
+
+Also added DIMENSION-entity collection to `ingest_dxf()`'s general output dict (previously
+explicitly uncollected per that function's own comment -- now collected since
+`extract_overall_height_m` needs them) and an `$INSUNITS`-to-metres conversion table (inches,
+feet, mm, cm, metres, yards) mirroring the same unit-conversion discipline PDF's feet-inch
+parsing already uses.
+
+**Shared segment-dict key renamed for cross-format consistency**: `pdf_ingest.extract_overall_
+height_m`'s returned segments used to carry an `"inches"` key (`semantics.py` did
+`sum(s["inches"] for s in group) * 0.0254` to convert); DXF's segments are already in metres, so
+both were unified onto a single `"value_m"` key (already-metres value, per CLAUDE.md §1 rule 4)
+that `semantics.py`'s per-floor splitting logic now consumes identically regardless of which
+ingest module produced the height. Checked for other consumers of the old key first (only
+`pdf_ingest.py` produced it and `semantics.py` consumed it; no test touched segment internals
+directly) before renaming.
+
+**New tests**: `tests/test_dxf_height.py` (6 tests: single dominant dimension, chain-verified-by-
+bracket, no dimensions, unmatched dimensions correctly return None, horizontal dimensions
+ignored, `$INSUNITS` feet conversion), `tests/test_dwg_convert.py` (7 tests: env-var override,
+missing-converter fail-loud with install instructions, missing-input-file fail-loud, a **real
+subprocess invocation** against a fake-but-contract-accurate converter script, and a
+no-output-produced failure), plus 3 new `tests/test_api.py` tests covering the full
+`/cases/assemble` DWG path (honest 502 without a converter installed; success via a mocked
+`convert_dwg_to_dxf` for both the auto-inferred and explicit-role upload paths). Full suite:
+133/133 (117 pre-existing + 16 new). Frontend build/lint clean.
+
+**What's genuinely still unverified, both flagged above but worth repeating together**: (1) the
+real ODA File Converter binary itself -- install it and re-test once available; (2) DXF height
+extraction against a real drawing -- needs the same "does this match the real building" check the
+PDF version got from the user earlier this session, once a real DXF/DWG elevation with dimensions
+is available.

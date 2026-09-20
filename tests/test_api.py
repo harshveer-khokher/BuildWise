@@ -365,6 +365,64 @@ def test_cases_assemble_auto_infer_yields_to_explicit_override():
     assert any(u["filename"] == "auto_ground.pdf" for u in body["unresolved"])
 
 
+def test_cases_assemble_dwg_upload_fails_loudly_without_the_converter_installed():
+    """The real, honest state of this environment: no ODA File Converter is installed, so a
+    .dwg upload must fail with a clear, actionable 502 -- never silently skip the file, never
+    pretend it worked, never crash with an unrelated traceback."""
+    resp = client.post(
+        "/cases/assemble",
+        files={"files": ("ground floor plan.dwg", b"not a real dwg", "application/octet-stream")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert "opendesign.com" in detail
+    assert "CHD_ODA_CONVERTER_PATH" in detail
+
+
+def test_cases_assemble_dwg_upload_succeeds_once_converted(monkeypatch):
+    """With a (mocked) converter available, a .dwg upload goes through exactly the same
+    role-inference and assembly path a .dxf upload would -- proving the wiring end-to-end
+    without requiring the real proprietary converter to be installed in this environment."""
+    from packages.parser import dwg_convert
+
+    def fake_convert(dwg_path, out_dxf_path):
+        import shutil
+        shutil.copy(SYNTH_DXF, out_dxf_path)
+
+    monkeypatch.setattr(dwg_convert, "convert_dwg_to_dxf", fake_convert)
+
+    resp = client.post(
+        "/cases/assemble",
+        files={"files": ("ground floor plan.dwg", b"not a real dwg either", "application/octet-stream")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["resolved_roles"] == {"ground floor plan.dwg": "ground"}
+    assert body["unresolved"] == []
+
+
+def test_cases_assemble_explicit_dwg_role_also_converts(monkeypatch):
+    """The explicit-named-role upload path (not just the auto-inferred 'files' field) must also
+    convert a .dwg before use."""
+    from packages.parser import dwg_convert
+
+    def fake_convert(dwg_path, out_dxf_path):
+        import shutil
+        shutil.copy(SYNTH_DXF, out_dxf_path)
+
+    monkeypatch.setattr(dwg_convert, "convert_dwg_to_dxf", fake_convert)
+
+    resp = client.post(
+        "/cases/assemble",
+        files={"ground": ("plan.dwg", b"not a real dwg", "application/octet-stream")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["model"] is not None
+
+
 def test_all_stubs_produce_a_report_without_error():
     for name in ALL_STUBS:
         data = _load_stub(name)

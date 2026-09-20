@@ -611,10 +611,13 @@ def extract_overall_height_m(path: str | Path) -> tuple[float | None, list[dict]
     per the module docstring above.
 
     Returns (height_m, matched_segments, note). `matched_segments` is the list of {"text",
-    "inches"} dicts the bracket's contiguous run consisted of (in top-to-bottom sheet order) --
-    callers that also know the floor count can use its length to attempt a per-floor breakdown;
-    this function itself only produces one whole-building total. `height_m` is None (with `note`
-    explaining why) whenever no bracket cleanly matches a contiguous run -- never a best guess.
+    "value_m"} dicts the bracket's contiguous run consisted of (in top-to-bottom sheet order,
+    value already converted to metres per CLAUDE.md §1 rule 4 -- same key name
+    dxf_ingest.extract_overall_height_m's segments use, so semantics.py's per-floor splitting
+    logic works identically regardless of source format) -- callers that also know the floor
+    count can use its length to attempt a per-floor breakdown; this function itself only
+    produces one whole-building total. `height_m` is None (with `note` explaining why) whenever
+    no bracket cleanly matches a contiguous run -- never a best guess.
     """
     path = Path(path)
     doc = fitz.open(str(path))
@@ -687,5 +690,5 @@ def extract_overall_height_m(path: str | Path) -> tuple[float | None, list[dict]
         "heuristic guess -- but it is still an ELEVATION, not a section; confirm on site if this "
         "matters for a compounding/appeal decision."
     )
-    segments = [{"text": t[0], "inches": t[1]} for t in included]
+    segments = [{"text": t[0], "value_m": t[1] * 0.0254} for t in included]
     return value_in * 0.0254, segments, note

@@ -77,7 +77,7 @@ export default function FileUploadZone({ files, onChange, disabled }) {
           id={inputId}
           type="file"
           multiple
-          accept=".pdf,.dxf"
+          accept=".pdf,.dxf,.dwg"
           disabled={disabled}
           className="file-dropzone__input"
           onChange={(e) => {
@@ -85,7 +85,7 @@ export default function FileUploadZone({ files, onChange, disabled }) {
             e.target.value = "";
           }}
         />
-        <p className="hint">Any number of files — ground/upper floor plans, section, elevations, site plan. Accepted formats: .pdf, .dxf.</p>
+        <p className="hint">Any number of files — ground/upper floor plans, section, elevations, site plan. Accepted formats: .pdf, .dxf, .dwg (DWG is converted to DXF on the server — requires the ODA File Converter to be installed there).</p>
       </div>
 
       {rejections.length > 0 && (

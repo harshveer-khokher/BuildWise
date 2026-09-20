@@ -248,29 +248,47 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
     valid_heights_m: list[tuple[str, float, list]] = []  # (role, height_m, matched_segments)
     for role in elevation_roles:
         sheet_path = case_dir / sheets[role]
-        if sheet_path.suffix.lower() != ".pdf":
-            continue
-        raw = pdf_ingest.ingest_plan_sheet(sheet_path)  # title_block only; footprint/rooms unused
-        title = raw["title_block"].get("sheet_title")
-        role_ok = pdf_ingest.sheet_title_matches_role(title, _ELEVATION_TITLE_KEYWORDS)
-        if not role_ok:
-            assumptions.append(
-                f"assemble_case: sheet role '{role}' ({sheets[role]}) is declared an elevation "
-                f"in meta.json, but its title-block text reads {title!r}, which does not "
-                "confirm that (extraction ambiguity: possible sheet-role mismatch, CLAUDE.md "
-                "§10.1 -- treat this sheet as unverified, do not use it for the storey "
-                "cross-check or height extraction below)."
-            )
-            continue
-        count, note = pdf_ingest.estimate_storey_count_from_elevation(sheet_path)
-        assumptions.append(f"assemble_case: [{role}] {note}")
-        if count is not None:
-            valid_elevation_estimates.append(count)
+        suffix = sheet_path.suffix.lower()
 
-        height_m, segments, height_note = pdf_ingest.extract_overall_height_m(sheet_path)
-        assumptions.append(f"assemble_case: [{role}] {height_note}")
-        if height_m is not None:
-            valid_heights_m.append((role, height_m, segments))
+        if suffix == ".pdf":
+            raw = pdf_ingest.ingest_plan_sheet(sheet_path)  # title_block only; footprint/rooms unused
+            title = raw["title_block"].get("sheet_title")
+            role_ok = pdf_ingest.sheet_title_matches_role(title, _ELEVATION_TITLE_KEYWORDS)
+            if not role_ok:
+                assumptions.append(
+                    f"assemble_case: sheet role '{role}' ({sheets[role]}) is declared an elevation "
+                    f"in meta.json, but its title-block text reads {title!r}, which does not "
+                    "confirm that (extraction ambiguity: possible sheet-role mismatch, CLAUDE.md "
+                    "§10.1 -- treat this sheet as unverified, do not use it for the storey "
+                    "cross-check or height extraction below)."
+                )
+                continue
+            count, note = pdf_ingest.estimate_storey_count_from_elevation(sheet_path)
+            assumptions.append(f"assemble_case: [{role}] {note}")
+            if count is not None:
+                valid_elevation_estimates.append(count)
+
+            height_m, segments, height_note = pdf_ingest.extract_overall_height_m(sheet_path)
+            assumptions.append(f"assemble_case: [{role}] {height_note}")
+            if height_m is not None:
+                valid_heights_m.append((role, height_m, segments))
+
+        elif suffix == ".dxf":
+            # No title-block text to re-verify the declared role against (dxf_ingest.py doesn't
+            # read title blocks at all -- role_inference.py's own DXF fallback is filename-only,
+            # already lower-trust than PDF's title-block read) -- the declared role from
+            # meta.json/role inference is trusted directly rather than re-checked here.
+            # No storey-count heuristic exists for DXF yet (PDF's is itself just a rough vector-
+            # line-density estimate; not built for DXF, not claimed to be equivalent).
+            height_m, segments, height_note = dxf_ingest.extract_overall_height_m(sheet_path)
+            assumptions.append(f"assemble_case: [{role}] {height_note}")
+            if height_m is not None:
+                valid_heights_m.append((role, height_m, segments))
+        else:
+            assumptions.append(
+                f"assemble_case: sheet role '{role}' ({sheets[role]}) has an unrecognised "
+                f"extension {suffix!r} -- skipped for storey-count/height cross-check."
+            )
 
     plan_storey_count = len(floors)
     if valid_elevation_estimates:
@@ -320,7 +338,7 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
                 per_floor_n = len(segments) // len(non_stilt_floors)
                 for i, floor in enumerate(reversed(non_stilt_floors)):
                     group = segments[i * per_floor_n:(i + 1) * per_floor_n]
-                    floor.height_m = sum(s["inches"] for s in group) * 0.0254
+                    floor.height_m = sum(s["value_m"] for s in group)
                 assumptions.append(
                     f"assemble_case: height {round(height_m, 3)}m confirmed by {len(agreeing_roles)} "
                     f"elevation sheet(s) ({agreeing_roles}) via their own labeled overall-height "

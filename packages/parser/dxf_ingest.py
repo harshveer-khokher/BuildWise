@@ -17,6 +17,7 @@ categories via substring heuristics, and falls back to "unknown" rather than gue
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,7 @@ def ingest_dxf(path: str | Path) -> dict[str, Any]:
     polylines: list[dict[str, Any]] = []
     lines: list[dict[str, Any]] = []
     texts: list[dict[str, Any]] = []
+    dimensions_list: list[dict[str, Any]] = []
 
     def _touch_layer(raw_layer: str) -> str:
         category = normalize_layer_name(raw_layer)
@@ -132,8 +134,28 @@ def ingest_dxf(path: str | Path) -> dict[str, Any]:
                     "insert": [float(insert.x), float(insert.y)],
                 }
             )
-        # Everything else (hatches, blocks, dimensions, ...) is out of scope for this hackathon
-        # build (CLAUDE.md §13 cut list spirit) -- it is simply not collected, not mis-collected.
+        elif dxftype == "DIMENSION":
+            # Collected now that extract_overall_height_m() (below) uses them -- previously
+            # "out of scope for this hackathon build" per this function's own comment, which is
+            # a real gap, not a deliberate omission (a DXF DIMENSION is a first-class,
+            # machine-measured entity, unlike PDF's vector-reconstruction approach).
+            try:
+                measurement = entity.get_measurement()
+            except Exception:
+                measurement = None
+            defpoint = entity.dxf.defpoint
+            dimensions_list.append(
+                {
+                    "layer": raw_layer,
+                    "category": category,
+                    "measurement": float(measurement) if measurement is not None else None,
+                    "defpoint": [float(defpoint.x), float(defpoint.y)],
+                    "dimtype": int(entity.dxf.dimtype) if entity.dxf.hasattr("dimtype") else None,
+                    "angle": float(entity.dxf.angle) if entity.dxf.hasattr("angle") else None,
+                }
+            )
+        # Everything else (hatches, blocks, ...) is out of scope for this hackathon build
+        # (CLAUDE.md §13 cut list spirit) -- it is simply not collected, not mis-collected.
 
     return {
         "path": str(path),
@@ -142,6 +164,7 @@ def ingest_dxf(path: str | Path) -> dict[str, Any]:
         "polylines": polylines,
         "lines": lines,
         "texts": texts,
+        "dimensions": dimensions_list,
     }
 
 
@@ -152,3 +175,140 @@ def closed_polylines_by_category(ingest: dict[str, Any], category: str) -> list[
         for p in ingest["polylines"]
         if p["category"] == category and p["closed"]
     ]
+
+
+# Standard AutoCAD $INSUNITS header codes actually seen on architectural drawings. 0
+# ("unspecified") is deliberately absent -- treated as "assumed already metres" with a note
+# rather than a silent guess, same principle as everywhere else numeric interpretation is
+# uncertain in this project.
+_INSUNITS_TO_METRES: dict[int, float] = {
+    1: 0.0254,   # inches
+    2: 0.3048,   # feet
+    4: 0.001,    # millimeters
+    5: 0.01,     # centimeters
+    6: 1.0,      # meters
+    10: 0.9144,  # yards
+}
+
+_VERTICAL_ANGLE_TOLERANCE_DEG = 5.0
+_BRACKET_MAX_TOLERANCE_M = 0.02  # 2 cm slop for a chain-sum-vs-bracket match
+
+
+def _is_vertical_dimension(angle: float | None) -> bool:
+    if angle is None:
+        return False
+    return abs((angle % 180.0) - 90.0) <= _VERTICAL_ANGLE_TOLERANCE_DEG
+
+
+def extract_overall_height_m(dxf_path: str | Path) -> tuple[float | None, list[dict] | None, str]:
+    """DXF analogue of pdf_ingest.extract_overall_height_m(): reads a verified overall height
+    off an elevation sheet's own DIMENSION entities -- never a heuristic line-count estimate.
+
+    Unlike the PDF version, which has to RECONSTRUCT a dimension's value by clustering nearby
+    vector line positions and OCR'd text tokens (a PDF has no semantic "this is a measurement"
+    entity), a DXF DIMENSION entity IS the measurement: `get_measurement()` returns the exact
+    value the CAD software itself computed when the drawing was made. This makes the DXF version
+    both simpler and more reliable to trust numerically -- PROVIDED the source drawing actually
+    used real DIMENSION entities rather than manually-drawn LINE+TEXT mimicking one (a real
+    possibility in messier real-world offices, matching this project's own "layer naming chaos"
+    experience). That fallback case is NOT handled here and returns (None, None, note) rather
+    than guessing at a text-position heuristic with no CAD-verified backing.
+
+    Untested against a real DWG/DXF elevation as of authoring (no sample was available) --
+    verify against a real drawing before fully trusting it, the same way the PDF equivalent
+    was verified against a real 33-foot building earlier in this project's development.
+
+    Algorithm: collect every roughly-vertical DIMENSION entity's measurement (dimension-line
+    angle within `_VERTICAL_ANGLE_TOLERANCE_DEG` of 90 degrees, or derived from defpoint/
+    defpoint2 for aligned dimensions with no explicit angle). If one clearly dominates (>=1.5x
+    the next largest), it's treated as the verified overall height directly. Otherwise, mirrors
+    pdf_ingest's chain-vs-bracket verification: does some contiguous run of the smaller
+    dimensions (ordered by position) sum to within `_BRACKET_MAX_TOLERANCE_M` of the largest?
+    If so, the largest is confirmed as the real overall-height bracket. If neither holds, no
+    height is returned -- declared uncertainty over fake precision (CLAUDE.md §1 rule 6).
+    """
+    path = Path(dxf_path)
+    try:
+        doc = ezdxf.readfile(str(path))
+    except Exception as exc:
+        return None, None, f"could not read this DXF file: {exc}"
+
+    insunits = int(doc.header.get("$INSUNITS", 0))
+    unit_to_m = _INSUNITS_TO_METRES.get(insunits, 1.0)
+    unit_note_suffix = (
+        f" ($INSUNITS={insunits} not recognised -- assumed already metres)"
+        if insunits not in _INSUNITS_TO_METRES else ""
+    )
+
+    msp = doc.modelspace()
+    vertical: list[dict[str, Any]] = []
+    for e in msp.query("DIMENSION"):
+        try:
+            measurement = e.get_measurement()
+        except Exception:
+            continue
+        if measurement is None or measurement <= 0:
+            continue
+        angle = float(e.dxf.angle) if e.dxf.hasattr("angle") else None
+        if angle is None and e.dxf.hasattr("defpoint2"):
+            dx = e.dxf.defpoint2.x - e.dxf.defpoint.x
+            dy = e.dxf.defpoint2.y - e.dxf.defpoint.y
+            if dx != 0 or dy != 0:
+                angle = math.degrees(math.atan2(dy, dx))
+        if not _is_vertical_dimension(angle):
+            continue
+        raw_text = e.dxf.text if e.dxf.hasattr("text") else ""
+        vertical.append({
+            "measurement_m": measurement * unit_to_m,
+            "y": float(e.dxf.defpoint.y),
+            "text": raw_text if raw_text and raw_text != "<>" else "",
+        })
+
+    if not vertical:
+        return None, None, (
+            "no vertical DIMENSION entities found on this sheet -- either no dimensions exist "
+            "at all, or the drawing uses manually-drawn line+text 'fake' dimensions rather than "
+            "real AutoCAD DIMENSION entities (not parsed here)." + unit_note_suffix
+        )
+
+    vertical.sort(key=lambda v: v["measurement_m"], reverse=True)
+    largest = vertical[0]
+    others = vertical[1:]
+
+    if not others or largest["measurement_m"] >= 1.5 * others[0]["measurement_m"]:
+        return (
+            largest["measurement_m"],
+            [{"text": largest["text"], "value_m": largest["measurement_m"]}],
+            f"single dominant vertical dimension ({largest['measurement_m']:.3f} m) found -- "
+            f"treated as the overall height directly." + unit_note_suffix,
+        )
+
+    others_by_pos = sorted(others, key=lambda v: v["y"])
+    n = len(others_by_pos)
+    best_match: list[dict[str, Any]] | None = None
+    for i in range(n):
+        running = 0.0
+        for j in range(i, n):
+            running += others_by_pos[j]["measurement_m"]
+            if abs(running - largest["measurement_m"]) <= _BRACKET_MAX_TOLERANCE_M:
+                if best_match is None or (j - i + 1) > len(best_match):
+                    best_match = others_by_pos[i:j + 1]
+            if running > largest["measurement_m"] + _BRACKET_MAX_TOLERANCE_M:
+                break
+
+    if best_match is not None:
+        segments = [{"text": s["text"], "value_m": s["measurement_m"]} for s in best_match]
+        return (
+            largest["measurement_m"], segments,
+            f"verified: {len(best_match)} smaller dimension(s) sum to within "
+            f"{_BRACKET_MAX_TOLERANCE_M} m of the largest dimension "
+            f"({largest['measurement_m']:.3f} m), confirming it as the overall height."
+            + unit_note_suffix,
+        )
+
+    return None, None, (
+        f"largest vertical dimension ({largest['measurement_m']:.3f} m) is not consistent with "
+        f"the sum of any contiguous run of the other {len(others)} vertical dimension(s) found "
+        "on this sheet -- not confident this is a verified overall-height bracket, so no height "
+        "is returned." + unit_note_suffix
+    )

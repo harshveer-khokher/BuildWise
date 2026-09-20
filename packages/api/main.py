@@ -51,6 +51,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from packages.api import checks, parsing
+from packages.parser import dwg_convert
 from packages.report.overlay import build_overlay
 from packages.report.render import render_html, render_markdown, render_pdf, summary_line
 from packages.schema import BuildingModel, Confidence, Finding
@@ -217,6 +218,22 @@ async def upload(request: Request):
     return model
 
 
+def _stage_dwg_as_dxf(tmp_path, stem: str, raw_bytes: bytes, dest_dxf) -> None:
+    """Stages an uploaded .dwg's raw bytes to disk and converts it to `dest_dxf` via the ODA
+    File Converter (packages.parser.dwg_convert). Raises HTTPException(502, ...) with the
+    converter's own actionable install/failure message on any conversion problem -- 502
+    because this is an external-tool/environment issue (the converter isn't installed, or
+    failed), not a malformed request from the caller (that would be 422). `tmp_path`/`dest_dxf`
+    are pathlib.Path -- left unannotated here since Path is only imported locally inside the
+    calling route, not at this module's top level."""
+    staged_dwg = tmp_path / f"{stem}.dwg"
+    staged_dwg.write_bytes(raw_bytes)
+    try:
+        dwg_convert.convert_dwg_to_dxf(staged_dwg, dest_dxf)
+    except dwg_convert.DwgConversionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.post("/cases/assemble", response_model=None)
 async def assemble_case_route(request: Request):
     """General file upload -> one BuildingModel, via Track A's real assembly logic
@@ -281,13 +298,17 @@ async def assemble_case_route(request: Request):
                 # A field named after a specific role is an explicit override for that role.
                 filename = value.filename or f"{field_name}.pdf"
                 suffix = Path(filename).suffix.lower() or ".pdf"
-                if suffix not in (".pdf", ".dxf"):
+                if suffix not in (".pdf", ".dxf", ".dwg"):
                     raise HTTPException(
                         status_code=422,
-                        detail=f"sheet '{field_name}': unsupported file type {suffix!r} (only .pdf and .dxf are ingested today)",
+                        detail=f"sheet '{field_name}': unsupported file type {suffix!r} (only .pdf, .dxf, and .dwg are ingested today)",
                     )
-                dest = tmp_path / f"{field_name}{suffix}"
-                dest.write_bytes(await value.read())
+                if suffix == ".dwg":
+                    dest = tmp_path / f"{field_name}.dxf"
+                    _stage_dwg_as_dxf(tmp_path, field_name, await value.read(), dest)
+                else:
+                    dest = tmp_path / f"{field_name}{suffix}"
+                    dest.write_bytes(await value.read())
                 sheets[field_name] = dest.name
             elif field_name == "authority":
                 authority = value
@@ -303,14 +324,20 @@ async def assemble_case_route(request: Request):
         guesses: dict[str, RoleGuess] = {}
         for idx, (original_filename, upload_file) in enumerate(auto_uploads):
             suffix = Path(original_filename).suffix.lower() or ".pdf"
-            if suffix not in (".pdf", ".dxf"):
+            if suffix not in (".pdf", ".dxf", ".dwg"):
                 guesses[original_filename] = RoleGuess(
                     None, "filename",
-                    f"unsupported file type {suffix!r} (only .pdf and .dxf are ingested today)",
+                    f"unsupported file type {suffix!r} (only .pdf, .dxf, and .dwg are ingested today)",
                 )
                 continue
-            safe_name = f"auto_{idx}{suffix}"
-            (tmp_path / safe_name).write_bytes(await upload_file.read())
+            if suffix == ".dwg":
+                safe_name = f"auto_{idx}.dxf"
+                _stage_dwg_as_dxf(
+                    tmp_path, f"auto_{idx}", await upload_file.read(), tmp_path / safe_name,
+                )
+            else:
+                safe_name = f"auto_{idx}{suffix}"
+                (tmp_path / safe_name).write_bytes(await upload_file.read())
             original_to_safe[original_filename] = safe_name
             guesses[original_filename] = guess_role(tmp_path / safe_name, original_filename)
 

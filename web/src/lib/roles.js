@@ -41,7 +41,7 @@ export function roleLabel(role) {
     .join(" ");
 }
 
-export const ACCEPTED_EXTENSIONS = [".pdf", ".dxf"];
+export const ACCEPTED_EXTENSIONS = [".pdf", ".dxf", ".dwg"];
 
 export function hasAcceptedExtension(filename) {
   const lower = filename.toLowerCase();
