@@ -217,7 +217,10 @@ def test_assemble_case_h01_produces_valid_building_model_with_known_gaps():
 
     # The gaps must be recorded verbatim in assumptions, not silently swallowed.
     joined = "\n".join(model.assumptions)
-    assert "no 'site'/'zoning' role sheet supplied" in joined
+    # h01 labels its plot line in plain grey, which identifies no geometry (unlike h02 and
+    # the violation case, whose magenta labels do), so site_geometry correctly recovers
+    # nothing here and the gap is still recorded rather than guessed around.
+    assert "no sheet yielded a usable plot boundary" in joined
     assert "confirmed by" in joined  # the height-extraction note
 
     # Jurisdiction fields recovered from the drawing's own title block.

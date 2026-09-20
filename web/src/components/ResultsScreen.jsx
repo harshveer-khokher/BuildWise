@@ -3,6 +3,7 @@ import { roleLabel } from "../lib/roles";
 import { FileUsageBadge } from "./StatusBadge";
 import FindingsAccordion from "./FindingsAccordion";
 import ReportPanel from "./ReportPanel";
+import SiteGeometryPanel from "./SiteGeometryPanel";
 import OverlaySvg from "./OverlaySvg";
 
 /** Results hierarchy per the design brief: overall factual counts (never a fabricated score),
@@ -27,6 +28,7 @@ export default function ResultsScreen({
   // "not attempted" (fixture path) the same as "attempted, unavailable" would look distinct via
   // .available, so FindingsAccordion can tell "nothing to show" from "show the disclosure".
   const estimatedEnvelope = fileAssembly?.estimatedEnvelope ?? null;
+  const siteGeometry = fileAssembly?.siteGeometry ?? null;
 
   return (
     <section className="screen results">
@@ -68,6 +70,8 @@ export default function ResultsScreen({
           Engine: {engineSource === "real" ? "real rule pack" : "fixture result set (real engine unavailable)"}
         </p>
       </div>
+
+      <SiteGeometryPanel siteGeometry={siteGeometry} />
 
       <div className="section-block">
         <h3>Findings</h3>

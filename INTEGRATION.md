@@ -1452,3 +1452,126 @@ wrong rejection) was replaced with
 `test_assemble_case_h02_confirms_elevation_role_via_page_caption_despite_title_mismatch`, which
 runs against the REAL h02 sheets and asserts the real, previously-discarded 11.887m height is now
 recovered. Full suite: 143/143.
+
+## Plot boundary, zoning envelope and setbacks, read off the drawings (2026-09-20)
+
+User: "the current code isn't able to derive/extract zoning area and setbacks... which leads to
+many of the parameters being unknown instead of pass/fail. i think drawings are sufficient to
+derive or infer all these datapoints." That turned out to be exactly right, and the reason it had
+never been built was a wrong assumption baked in from Stage 0: that plot/zoning geometry needs a
+dedicated **site sheet**, and that no real case has one. Neither h01, h02 nor the new `violation`
+case has a site sheet -- but all of them draw the plot line straight onto the **floor plan**, and
+h02 and `violation` draw the zoning line there too.
+
+### What the drawings actually carry
+
+Real Mohali submissions label and colour-code both boundaries on the plan sheet: **PLOT LINE**
+(magenta) and **ZONING LINE** (orange), each drawn as a long run of short dashes. The label text is
+drawn in the same colour as the line it names, which is the link that makes this extractable
+without hardcoding anything: `packages/parser/site_geometry.py` reads the label, takes *that
+label's own colour*, and collects the vector segments drawn in it. An office using different colours
+works unchanged; an office that doesn't label its lines yields nothing rather than a guess.
+
+### Verification, against the sheets' own printed text
+
+Every number below is derived from drawn geometry, so agreeing with text printed on the same sheet
+is independent confirmation rather than restatement:
+
+| Derived | Printed on the sheet |
+|---|---|
+| plot 27.58m x 15.54m = 428.8 sqm (512 sq yd) | `90'` and `51'-1.5"` |
+| front zoning setback 3.98m | `13'` |
+| rear zoning setback 5.98m | `19'-6"` |
+| h02 plot 418.2 sqm | exactly 500 sq yd, a standard Mohali plot |
+
+The `violation` case's rear wall is built to within **1mm** of its zoning line -- which is what an
+architect does -- while its front setback is **2.49m short**. That is the case working as intended.
+
+### Design decisions worth knowing
+
+**Scale is cross-verified in two directions.** The plot rectangle's width and height are each
+matched against a dimension printed on the sheet, and a scale is accepted only when both axes have
+one and the two agree (0.55% on the violation sheet). This replaces `estimate_scale_pts_per_m`'s
+"assume the largest dimension spans the longer axis" guess wherever a plot line exists. Two guards
+were added after real failures: a dimension must be drawn *alongside the plot and centred on the
+extent it measures* (without this, two interior room dimensions sharing the plot's aspect ratio
+"verified" each other and produced a confident **34 sqm** plot on h02's first-floor sheet), and no
+scale may imply a plot smaller than the largest dimension printed on the sheet.
+
+**Walls are identified by masonry thickness, not by being thin.** An earlier scoring pass on "thin
+and long" confidently selected the floor hatching. The discriminator that works is physical:
+convert each candidate colour's *modal* shape thickness through the verified scale and require a
+real masonry dimension. It lands on 23cm (a 9" brick wall) on the violation sheet and 11cm (a 4.5"
+half-brick partition) on h02, and nothing else on either sheet is close to the band.
+
+**The footprint is an upper bound, and the engine is one-sided about it.** The building extent is
+the convex hull of everything drawn as masonry inside the plot, which also swallows any boundary
+wall standing on the plot line -- so it over-estimates. `Floor.footprint_is_upper_bound` (new,
+additive-with-default, so older models still validate) tells the engine, and
+`engine._soften_upper_bound_failures` keeps every **pass** as a real pass (anything fitting inside a
+shape larger than the building fits inside the building) while downgrading every **failure** to an
+`extraction` ambiguity. This is what makes it safe to feed a derived footprint in at all: CLAUDE.md
+is explicit that a false positive sends an architect redrawing for nothing, while a false negative
+is merely the status quo.
+
+**Plan sheets are now anchored to the plot line as a shared datum**, satisfying section 10.1's
+"plan footprints share a common origin/datum with the site sheet". Upper-floor sheets carry the
+plot line but rarely re-print the overall dimensions, so they take the verified scale from the
+sheet that does (`scale_hint`) and use their own plot line as the anchor. Before this every floor
+sat in its own sheet-local frame, which made any plot-relative check meaningless even where a plot
+existed.
+
+**Short zoning runs are counted, never applied.** A zoning line only clips the envelope when it
+spans at least 70% of the plot in its direction. Shorter runs mark stepped pockets (a permitted
+rear outbuilding); applying one as a full half-plane cut would shrink the envelope below what the
+zoning plan permits and manufacture a containment failure. They are reported as
+`unmodelled_zoning_steps` instead, with the note that the real envelope is that size **or larger**.
+
+**Elevations that differ slightly on height no longer discard the height entirely.** The previous
+rule threw away every reading when elevations disagreed at all; the violation case's front/rear
+read 40' and its side 39'-6", so height -- and with it every height-derived setback requirement --
+came back `unknown` on a drawing that plainly states its height. Within 10% the spread is treated
+as a stepped parapet and the **tallest** reading governs (the point a height limit regulates, and
+the one a height-derived setback grows from); beyond 10% it is still treated as an extraction
+failure and no height is assigned.
+
+**Edge roles are inferred from the geometry, not from an assumption about the road.** Two opposite
+edges flush with the plot line identify the side boundaries (Mohali plotted development builds to
+the side lines and sets back from road and rear). Of the remaining pair the smaller setback is
+taken as the front -- that last step is a stated convention, and if the plot faces the other way
+the front and rear *labels* swap while the measured distances do not.
+
+### Effect
+
+`violation` case, end to end through `/cases/assemble` + `/checks/run`: **unknown findings dropped
+from 8 to 4**, with real numbers replacing them (front setback 1.49m against 3.05m required, FAR
+0.826 against 1.25 -- a pass). h02: 10 passes, 7 needing confirmation, 7 unknown, where
+containment/coverage/FAR/setbacks were previously all unknown. **No false violations**: every
+footprint-driven failure is correctly flagged for confirmation.
+
+### API and UI
+
+`/cases/assemble` gained a `site_geometry` block (plot area, envelope area, scale, wall thickness,
+unmodelled steps, and per-edge zoning vs built setbacks). Per-edge setbacks live there rather than
+on the model because the frozen `Edge` schema has no field for them.
+`web/src/components/SiteGeometryPanel.jsx` renders it above the findings, with the same one-sided
+verdict the engine uses. `mergeSynthesizedPlot` now defers to the measured plot and surfaces a note
+when the plot size typed on the intake screen disagrees with it by more than 5%.
+
+**Not verified in a browser** -- no browser automation was available in this session. The build and
+lint are clean, and the live API response was checked field-by-field against what the panel
+consumes, but the rendered page itself has not been looked at.
+
+### Not solved
+
+The DWG testers (`bungalw`, `classic_villa`, `family_house`, `modern_house`) are stock CAD models
+from dwgmodels.com with no Punjab zoning lines, and `FOR STRUCTURE.dwg` is a structural drawing --
+so none of them exercise this path. All five convert cleanly through the ODA pipeline. h01 labels
+its plot line in plain **grey**, which identifies no geometry (grey and black are the commonest
+colours on any drawing, so following one would collect the whole sheet), so h01 still yields no
+plot geometry -- correctly, and loudly.
+
+New tests: `tests/test_site_geometry.py` (12, built on a synthetic sheet drawn to a known scale so
+they assert exact numbers without the gitignored real drawings, plus one real-case test that skips
+when absent) and 3 in `tests/test_rules_engine.py` for the one-sided upper-bound rule. Suite:
+158/158.

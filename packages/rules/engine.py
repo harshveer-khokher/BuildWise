@@ -854,7 +854,58 @@ def evaluate(model: BuildingModel, pack: dict) -> list[Finding]:
             if fn is None:
                 continue
             findings.extend(fn(rule, model))
-    return findings
+
+    return _soften_upper_bound_failures(model, findings)
+
+
+# Checks whose verdict is read off the building footprint, matched on the rule id since that is
+# what a Finding carries. When the footprint is flagged as an upper bound only these need the
+# one-sided treatment below -- a room-height or staircase-width finding is unaffected by how the
+# outline was traced.
+_FOOTPRINT_DEPENDENT_ID_HINTS = ("containment", "coverage", "far", "setback")
+
+
+def _is_footprint_dependent(rule_id: str) -> bool:
+    lowered = rule_id.lower()
+    return any(hint in lowered for hint in _FOOTPRINT_DEPENDENT_ID_HINTS)
+
+
+def _soften_upper_bound_failures(model: BuildingModel, findings: list[Finding]) -> list[Finding]:
+    """Downgrade footprint-driven *failures* to ambiguities when the footprint over-estimates.
+
+    `Floor.footprint_is_upper_bound` means the outline encloses the real building rather than
+    tracing it (packages/parser/site_geometry.py builds it as the convex hull of everything drawn
+    as masonry, which also swallows a boundary wall standing on the plot line). The logic is
+    deliberately one-sided, and it is sound in one direction only:
+
+      * a check that PASSES against a shape larger than the building passes against the building
+        itself -- kept exactly as it is, a real result rather than a hedge;
+      * a check that FAILS may be failing against geometry that is not the house, so it becomes
+        `ambiguity` / `extraction` -- the measured numbers are still reported, but as something to
+        confirm rather than a violation the tool stands behind.
+
+    This is what makes it safe to feed a derived footprint into the engine at all. CLAUDE.md is
+    explicit that a false positive sends an architect redrawing for nothing and loses the account
+    permanently, while a false negative is merely the status quo.
+    """
+    if not any(f.footprint_is_upper_bound for f in model.floors):
+        return findings
+
+    softened = []
+    for finding in findings:
+        if finding.status != "violation" or not _is_footprint_dependent(finding.rule_id):
+            softened.append(finding)
+            continue
+        # The caveat itself goes no further than the finding's own status/class and title: the
+        # full explanation is already carried verbatim on BuildingModel.assumptions, which is the
+        # channel CLAUDE.md §5 designates for it and which the report prints unedited. Inventing
+        # a new Remedy kind for "go and check" would put a non-remedy in the remedy list.
+        softened.append(finding.model_copy(update={
+            "status": "ambiguity",
+            "ambiguity_class": "extraction",
+            "title": f"{finding.title} -- needs confirmation against the drawing",
+        }))
+    return softened
 
 
 def evaluate_path(model: BuildingModel, pack_path: str | pathlib.Path) -> list[Finding]:

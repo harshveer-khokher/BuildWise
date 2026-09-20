@@ -38,8 +38,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from packages.parser import dxf_ingest, pdf_ingest, sheet_ref
-from packages.schema import BuildingModel, Floor, Jurisdiction, Room
+from packages.parser import dxf_ingest, pdf_ingest, sheet_ref, site_geometry
+from packages.schema import BuildingModel, Edge, Floor, Jurisdiction, Room
 
 # Known plan-sheet role names -> Floor.level. Extend as new offices' naming turns up.
 _PLAN_LEVELS: dict[str, tuple[int, bool]] = {
@@ -61,6 +61,12 @@ _ELEVATION_TITLE_KEYWORDS = ("elevation",)
 # handoff, the only supplied base-rules doc is the 1996 pack, NOT "puda_2021" as CLAUDE.md's
 # glossary names it -- Track B renamed the pack id accordingly, so Track A matches that id here.
 _DEFAULT_RULE_PACK = "puda_building_rules_1996"
+
+# Elevation faces of one building routinely differ by a step in the parapet. Within this
+# fraction of the tallest reading the difference is treated as real architecture and the
+# tallest governs; beyond it the readings are treated as an extraction failure and no height
+# is assigned at all.
+_HEIGHT_SPREAD_LIMIT = 0.10
 
 
 def _room_use_from_raw(raw_use: str) -> str:
@@ -150,6 +156,13 @@ def _classify_role(role: str) -> str:
 
 
 def assemble_case(meta_path: str | Path) -> BuildingModel:
+    """Assemble one case into a BuildingModel (see assemble_case_with_site for the site block)."""
+    return assemble_case_with_site(meta_path)[0]
+
+
+def assemble_case_with_site(
+    meta_path: str | Path,
+) -> tuple[BuildingModel, "site_geometry.SiteGeometry | None"]:
     """Assemble one case's meta.json + sheet files into a single BuildingModel.
 
     Never raises on a missing site/section sheet -- that is an expected, first-class outcome
@@ -354,13 +367,32 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
     # --- assign height from an elevation's own labeled overall-height dimension, if any -----
     if valid_heights_m:
         distinct_values = {round(h, 3) for _, h, _ in valid_heights_m}
-        if len(distinct_values) > 1:
+        spread = max(distinct_values) - min(distinct_values)
+        if len(distinct_values) > 1 and spread > max(distinct_values) * _HEIGHT_SPREAD_LIMIT:
             assumptions.append(
                 "assemble_case: HEIGHT MISMATCH (extraction ambiguity candidate) -- elevation "
-                f"sheets disagree on overall height: {[(r, round(h, 3)) for r, h, _ in valid_heights_m]}. "
+                f"sheets disagree on overall height: {[(r, round(h, 3)) for r, h, _ in valid_heights_m]}, "
+                f"a spread of {spread:.2f}m. That is too wide to be a stepped parapet, so it "
+                "reads as an extraction failure rather than a real difference between faces. "
                 "Floor.height_m left None on every floor rather than picking one silently."
             )
         else:
+            if len(distinct_values) > 1:
+                # A small spread between faces is ordinary architecture (a stepped parapet, a
+                # lower side wing), not a failed read. Discarding every height over six inches
+                # of real variation left height, storey and height-derived setback rules
+                # unresolved on drawings that plainly state their height -- so the TALLEST
+                # reading is taken, which is the one that governs: a height limit regulates the
+                # building's highest point, and a setback derived from height grows with it.
+                # Announced, never silent, and erring towards the stricter requirement.
+                valid_heights_m = sorted(valid_heights_m, key=lambda t: -t[1])
+                assumptions.append(
+                    "assemble_case: elevation sheets differ slightly on overall height "
+                    f"({[(r, round(h, 3)) for r, h, _ in valid_heights_m]}, spread {spread:.2f}m) "
+                    "-- consistent with a stepped parapet rather than a bad read. The TALLEST "
+                    "was used, since that is the point a height limit regulates and the one a "
+                    "height-derived setback is computed from; the others are recorded here."
+                )
             height_m = valid_heights_m[0][1]
             agreeing_roles = [r for r, _, _ in valid_heights_m]
             segments = valid_heights_m[0][2] or []
@@ -399,22 +431,83 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
         )
 
     # --- site/zoning: plot polygon, plot area, zoned area, edges ----------------------------
-    site_roles = [r for r in sheets if _classify_role(r) == "site"]
-    if not site_roles:
+    # These do NOT need a dedicated site sheet. Real Mohali submissions draw the plot line and
+    # the zoning line straight onto the floor-plan sheets, labelled and colour-coded, so the
+    # ground-floor plan carries the plot boundary, the buildable envelope and the building all in
+    # one coordinate frame -- see packages/parser/site_geometry.py. A site/zoning sheet is still
+    # preferred when one exists; the plan sheets are the fallback that makes this work at all on
+    # every real case supplied so far, none of which has a site sheet.
+    site_geom = None
+    ordered_site_candidates = (
+        [r for r in sheets if _classify_role(r) == "site"]
+        + [r for r in ("combined", "ground") if r in sheets]
+        + [r for r in sheets if _classify_role(r) == "plan"]
+    )
+    for role in dict.fromkeys(ordered_site_candidates):
+        filename, _layout = sheet_ref.decode(sheets[role])
+        candidate_path = case_dir / filename
+        if candidate_path.suffix.lower() != ".pdf":
+            continue
+        candidate = site_geometry.extract_site_geometry(candidate_path)
+        if candidate.usable:
+            site_geom = candidate
+            assumptions.extend(candidate.notes)
+            assumptions.append(
+                f"assemble_case: plot and zoning geometry taken from the '{role}' sheet "
+                f"({filename}), which carries both boundaries drawn on it."
+            )
+            break
+
+    if site_geom is not None:
+        # Re-anchor every plan sheet's footprint onto the plot line, using the one verified
+        # scale. Until now each floor sat in its own sheet-local frame, which made any
+        # plot-relative check (containment, setbacks) meaningless even when a plot existed.
+        aligned, unaligned = 0, []
+        for role, ref in sheets.items():
+            if _classify_role(role) != "plan":
+                continue
+            level = 0 if role == "combined" else _PLAN_LEVELS.get(role, (None, None))[0]
+            floor = next((f for f in floors if f.level == level), None)
+            if floor is None:
+                continue
+            filename, _layout = sheet_ref.decode(ref)
+            sheet_path = case_dir / filename
+            if sheet_path.suffix.lower() != ".pdf":
+                continue
+            per_sheet = site_geometry.extract_site_geometry(
+                sheet_path, scale_hint=site_geom.scale_pts_per_m
+            )
+            if per_sheet.usable and per_sheet.footprint_hull:
+                floor.footprint = per_sheet.footprint_hull
+                floor.footprint_is_upper_bound = True
+                aligned += 1
+            else:
+                unaligned.append(role)
+        if aligned:
+            assumptions.append(
+                f"assemble_case: {aligned} floor footprint(s) re-anchored onto the plot line and "
+                "replaced with the convex hull of that sheet's own masonry, so plot, zoned area "
+                "and building now share one coordinate frame and plot-relative checks are "
+                "meaningful. Each is an UPPER BOUND on the real outline (it also encloses any "
+                "boundary wall drawn on the plot line), and is flagged as such on the model -- "
+                "the rules engine keeps a pass against it and downgrades a failure to an "
+                "ambiguity needing confirmation, never reporting a violation off an over-estimate."
+            )
+        if unaligned:
+            assumptions.append(
+                f"assemble_case: plan sheet role(s) {unaligned} could not be anchored to the plot "
+                "line (no plot boundary recoverable on that sheet); those floors keep their own "
+                "sheet-local footprint and must not be compared against the plot."
+            )
+
+    if site_geom is None:
         assumptions.append(
-            "assemble_case: no 'site'/'zoning' role sheet supplied -- plot_polygon, "
+            "assemble_case: no sheet yielded a usable plot boundary -- plot_polygon, "
             "plot_area_sqm, zoned_area and edges all left unset. Containment, coverage, FAR and "
             "setback checks must emit status=unknown, never pass. Per-floor footprints above are "
             "each in their OWN sheet-local metre frame (no shared plot datum exists to align "
             "them to) -- do not assume floor N and floor N+1 footprints share an origin with the "
             "plot, only with each other's sheet, and only approximately at that."
-        )
-    else:
-        assumptions.append(
-            f"assemble_case: site/zoning sheet role(s) present ({site_roles}) but site-sheet "
-            "parsing (plot polygon / zoned area tracing) is not implemented in this parser build "
-            "-- no such sheet has been supplied for any case yet to develop it against. "
-            "plot_polygon/zoned_area left None pending that work."
         )
 
     # --- jurisdiction: best-effort from whichever plan sheet's title block parsed ------------
@@ -446,13 +539,23 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
     else:
         source = meta.get("source_format", "vector_pdf")
 
-    return BuildingModel(
+    model_edges = []
+    if site_geom is not None:
+        for e in site_geom.edges:
+            model_edges.append(Edge(
+                line=e["line"],
+                faces_road=e["faces_road"],
+                road_width_m=e["road_width_m"],
+                role=e["role"],
+            ))
+
+    model = BuildingModel(
         source=source,
         jurisdiction=jurisdiction,
-        plot_polygon=None,
-        plot_area_sqm=meta.get("plot_area_sqm"),
-        zoned_area=None,
-        edges=[],
+        plot_polygon=site_geom.plot_polygon if site_geom else None,
+        plot_area_sqm=(site_geom.plot_area_sqm if site_geom else None) or meta.get("plot_area_sqm"),
+        zoned_area=site_geom.zoned_area if site_geom else None,
+        edges=model_edges,
         floors=floors,
         projections=[],
         courtyards=[],
@@ -463,3 +566,4 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
         tree_count=0,
         assumptions=assumptions,
     )
+    return model, site_geom

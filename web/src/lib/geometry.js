@@ -54,6 +54,26 @@ export function sqmToSqyd(value) {
  * carries a plot_area_sqm (the assembled drawing's own value always wins). */
 export function mergeSynthesizedPlot(model, widthValue, lengthValue, unit) {
   if (model.plot_area_sqm !== null && model.plot_area_sqm !== undefined) {
+    // The plot was measured off the drawing's own plot line, which beats anything typed in.
+    // A material disagreement between the two is worth saying out loud rather than silently
+    // discarding the typed figure — it usually means the wrong plot size was entered, or the
+    // sheet is not the one being priced.
+    const typed = synthesizePlotRectangle(widthValue, lengthValue, unit);
+    if (typed.plotAreaSqm) {
+      const diff = Math.abs(typed.plotAreaSqm - model.plot_area_sqm);
+      if (diff / model.plot_area_sqm > 0.05) {
+        return {
+          ...model,
+          assumptions: [
+            ...(model.assumptions || []),
+            `Plot area measured from the drawing's own plot line is ${model.plot_area_sqm.toFixed(1)} sqm, ` +
+              `but the plot size entered on the intake screen works out to ${typed.plotAreaSqm.toFixed(1)} sqm ` +
+              `(a ${((diff / model.plot_area_sqm) * 100).toFixed(0)}% difference). The measured value was used. ` +
+              `Check the entered size, or whether this drawing is for the plot you meant.`,
+          ],
+        };
+      }
+    }
     return model;
   }
   const { plotPolygon, plotAreaSqm } = synthesizePlotRectangle(widthValue, lengthValue, unit);

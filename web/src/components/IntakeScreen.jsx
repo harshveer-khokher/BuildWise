@@ -83,6 +83,7 @@ export default function IntakeScreen({ onModelReady }) {
         resolved_roles: resolvedRoles,
         unresolved,
         estimated_envelope: estimatedEnvelope,
+        site_geometry: siteGeometry,
       } = await assembleCase(files, jurisdiction.authority, plotDimensionsM);
       // Unresolved files affect what data the check ran against, so they're recorded as
       // assumptions too — that's the one channel guaranteed to reach the exported report as well
@@ -102,6 +103,7 @@ export default function IntakeScreen({ onModelReady }) {
         resolvedRoles: resolvedRoles || {},
         unresolved: unresolved || [],
         estimatedEnvelope: estimatedEnvelope ?? null,
+        siteGeometry: siteGeometry ?? null,
       });
     } catch (err) {
       setSubmitError(String(err.message || err));

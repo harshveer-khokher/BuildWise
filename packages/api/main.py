@@ -418,7 +418,7 @@ async def assemble_case_route(request: Request):
         meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
         try:
-            model = semantics.assemble_case(meta_path)
+            model, site_geom = semantics.assemble_case_with_site(meta_path)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"could not assemble uploaded sheets: {exc}") from exc
 
@@ -449,6 +449,19 @@ async def assemble_case_route(request: Request):
         "resolved_roles": resolved_roles,
         "unresolved": unresolved,
         "estimated_envelope": estimated_envelope,
+        # Measured off the drawing's own plot line and zoning line, so unlike
+        # `estimated_envelope` (which derives a theoretical envelope from rule formulas plus
+        # plot dimensions the user typed in) these are what the sheet actually says. Per-edge
+        # setbacks live here rather than on the model because the frozen Edge schema has no
+        # field for them.
+        "site_geometry": None if site_geom is None or not site_geom.usable else {
+            "plot_area_sqm": site_geom.plot_area_sqm,
+            "zoned_area_sqm": site_geom.zoned_area_sqm,
+            "scale_pts_per_m": round(site_geom.scale_pts_per_m, 2) if site_geom.scale_pts_per_m else None,
+            "wall_thickness_m": site_geom.wall_thickness_m,
+            "unmodelled_zoning_steps": site_geom.unmodelled_zoning_steps,
+            "edges": site_geom.edges,
+        },
     }
 
 

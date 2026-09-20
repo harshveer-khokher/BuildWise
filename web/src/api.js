@@ -83,7 +83,14 @@ export function uploadModel(buildingModel) {
  * assembly; the caller is responsible for surfacing that (CLAUDE.md §1 rule 6: unknown, never
  * silently dropped). `estimated_envelope` is `null` when plot dimensions weren't sent, and
  * otherwise either `{available: false, reason}` or the full estimate — see
- * packages/rules/estimated_envelope.py. */
+ * packages/rules/estimated_envelope.py.
+ *
+ * `site_geometry` is separate and more authoritative: plot area, buildable envelope and per-edge
+ * setbacks MEASURED off the drawing's own labelled plot line and zoning line
+ * (packages/parser/site_geometry.py), at a scale cross-checked in both directions against
+ * dimensions printed on that sheet. `null` when the uploaded sheets carry no colour-coded plot
+ * line to read. Per-edge setbacks live here rather than on the model because the frozen Edge
+ * schema has no field for them. */
 export function assembleCase(files, authority, plotDimensionsM) {
   const form = new FormData();
   for (const file of files) {

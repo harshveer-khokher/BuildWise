@@ -174,3 +174,55 @@ def test_no_pack_rule_is_marked_verified_without_going_through_verify_pass():
                 f"{rule['id']} marked verified but {clause_id} has no 'match' verdict in the "
                 f"recorded verification pass"
             )
+
+
+# ---------------------------------------------------------------------------
+# Upper-bound footprints (packages/parser/site_geometry.py derives one from a plan sheet's
+# masonry, which also encloses any boundary wall standing on the plot line).
+# ---------------------------------------------------------------------------
+
+
+def _model_with_containment_failure(upper_bound: bool) -> BuildingModel:
+    """A building that pokes outside its zoned area, with the footprint flagged either way."""
+    return BuildingModel(
+        source="vector_pdf",
+        jurisdiction={"authority": "GMADA", "rule_pack": "puda_building_rules_1996"},
+        plot_polygon=[[0, 0], [20, 0], [20, 30], [0, 30], [0, 0]],
+        plot_area_sqm=600.0,
+        zoned_area=[[2, 2], [18, 2], [18, 28], [2, 28], [2, 2]],
+        floors=[{
+            "level": 0,
+            "is_stilt": False,
+            # Deliberately crosses the zoned boundary on every side.
+            "footprint": [[1, 1], [19, 1], [19, 29], [1, 29], [1, 1]],
+            "footprint_is_upper_bound": upper_bound,
+        }],
+    )
+
+
+def test_a_traced_footprint_outside_the_zoned_area_is_a_violation():
+    findings = run_checks(_model_with_containment_failure(upper_bound=False))
+    containment = [f for f in findings if "containment" in f.rule_id]
+    assert containment and any(f.status == "violation" for f in containment)
+
+
+def test_an_upper_bound_footprint_downgrades_that_violation_to_an_ambiguity():
+    """The shape encloses the real building rather than tracing it, so a failure against it may
+    be a failure against a boundary wall. CLAUDE.md: a false positive sends an architect
+    redrawing for nothing, so the tool reports something to confirm, not a settled violation."""
+    findings = run_checks(_model_with_containment_failure(upper_bound=True))
+    containment = [f for f in findings if "containment" in f.rule_id]
+    assert containment
+    assert not any(f.status == "violation" for f in containment)
+    softened = [f for f in containment if f.status == "ambiguity"]
+    assert softened and all(f.ambiguity_class == "extraction" for f in softened)
+    assert all("needs confirmation" in f.title for f in softened)
+
+
+def test_a_pass_against_an_upper_bound_footprint_is_kept_as_a_real_pass():
+    """One-sided on purpose: anything that fits inside a shape larger than the building fits
+    inside the building, so a pass here is sound and must not be hedged into an ambiguity."""
+    model = _model_with_containment_failure(upper_bound=True)
+    model.floors[0].footprint = [[5, 5], [15, 5], [15, 25], [5, 25], [5, 5]]  # well inside
+    containment = [f for f in run_checks(model) if "containment" in f.rule_id]
+    assert containment and all(f.status == "pass" for f in containment)

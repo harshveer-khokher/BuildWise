@@ -69,6 +69,20 @@ class Floor(BaseModel):
     against a real building's as-built height (see INTEGRATION.md). Never from a heuristic
     line-count estimate; that remains cross-check-only."""
     rooms: list[Room] = Field(default_factory=list)
+    footprint_is_upper_bound: bool = False
+    """True when `footprint` is known to enclose the real outline rather than trace it -- e.g.
+    the convex hull of everything drawn as masonry on a plan sheet
+    (packages.parser.site_geometry), which also swallows any boundary wall standing on the plot
+    line.
+
+    This is the one thing the rules engine needs to stay honest about such a footprint, and the
+    logic is one-sided on purpose: because the shape is an over-estimate, a check that PASSES
+    against it provably passes against the real building, while a check that FAILS may be failing
+    against geometry that isn't the house at all. So the engine keeps passes and downgrades
+    failures to an `extraction` ambiguity rather than reporting a violation it cannot stand
+    behind (CLAUDE.md: a false positive sends an architect redrawing for nothing).
+
+    Additive with a default, so every model written before this field existed still validates."""
 
 
 class BuildingModel(BaseModel):

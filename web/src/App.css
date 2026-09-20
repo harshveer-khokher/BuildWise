@@ -1180,3 +1180,70 @@ input[type="file"] {
     padding: 18px 16px;
   }
 }
+
+
+/* Plot / buildable envelope, measured off the drawing (SiteGeometryPanel). */
+.site-geom__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.site-geom__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.site-geom__value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.site-geom__label {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.site-geom__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.site-geom__table th,
+.site-geom__table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.site-geom__table thead th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  font-weight: 600;
+}
+
+.site-geom__ok {
+  color: #1f7a44;
+  font-weight: 600;
+}
+
+.site-geom__short {
+  color: #9a5b00;
+  font-weight: 600;
+}
+
+.site-geom__notes {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.site-geom__notes li {
+  margin-bottom: 0.3rem;
+}
