@@ -281,12 +281,20 @@ def assemble_case(meta_path: str | Path) -> BuildingModel:
             title = raw["title_block"].get("sheet_title")
             role_ok = pdf_ingest.sheet_title_matches_role(title, _ELEVATION_TITLE_KEYWORDS)
             if not role_ok:
+                # The formal title didn't confirm it, but a sheet can carry a separate view
+                # caption printed directly on the drawing (e.g. formally titled "WOODEN JOINERY
+                # DETAIL" with "FRONT ELEVATION" printed under the drawing it actually shows) --
+                # role_inference.guess_role() already accepts this signal when first assigning
+                # the role (packages/api/role_inference.py), so re-verifying against the title
+                # alone here would silently undo that and discard a correctly-classified sheet.
+                role_ok = pdf_ingest.page_text_matches_role(sheet_path, _ELEVATION_TITLE_KEYWORDS)
+            if not role_ok:
                 assumptions.append(
                     f"assemble_case: sheet role '{role}' ({filename}) is declared an elevation "
-                    f"in meta.json, but its title-block text reads {title!r}, which does not "
-                    "confirm that (extraction ambiguity: possible sheet-role mismatch, CLAUDE.md "
-                    "§10.1 -- treat this sheet as unverified, do not use it for the storey "
-                    "cross-check or height extraction below)."
+                    f"in meta.json, but its title-block text reads {title!r}, and no other "
+                    "caption on the page confirms it either (extraction ambiguity: possible "
+                    "sheet-role mismatch, CLAUDE.md §10.1 -- treat this sheet as unverified, do "
+                    "not use it for the storey cross-check or height extraction below)."
                 )
                 continue
             count, note = pdf_ingest.estimate_storey_count_from_elevation(sheet_path)

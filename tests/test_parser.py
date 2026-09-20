@@ -225,12 +225,21 @@ def test_assemble_case_h01_produces_valid_building_model_with_known_gaps():
 
 
 @requires_h02
-def test_assemble_case_h02_flags_elevation_role_mismatch_in_assumptions():
+def test_assemble_case_h02_confirms_elevation_role_via_page_caption_despite_title_mismatch():
+    # h02's meta.json declares this file role "elevation_front", and its formal title block
+    # reads "WOODEN JOINERY DETAIL" -- but the sheet ALSO prints "FRONT ELEVATION" as a separate
+    # caption elsewhere on the page (it really is an elevation; the title block just names one
+    # detail drawn on the same sheet). semantics.py must accept that corroborating caption
+    # (pdf_ingest.page_text_matches_role) instead of rejecting a correctly-classified real sheet
+    # over a title block that only describes part of it -- and use its real, confirmed 39'
+    # (11.887m) overall-height dimension, agreed by both front and rear elevations.
     model = semantics.assemble_case(H02_META)
     assert isinstance(model, BuildingModel)
     joined = "\n".join(model.assumptions)
     assert "elevation_front" in joined
-    assert "does not confirm that" in joined
+    assert "does not confirm that" not in joined
+    total_height_m = sum(f.height_m for f in model.floors if f.height_m is not None)
+    assert total_height_m == pytest.approx(11.887, abs=0.01)  # 39'-0", confirmed by 2 elevations
 
 
 @requires_synth_dxf

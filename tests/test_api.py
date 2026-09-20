@@ -334,6 +334,54 @@ def test_cases_assemble_auto_infers_role_from_pdf_title_block():
     assert body["model"]["jurisdiction"]["authority"] == "GMADA"
 
 
+def _make_pdf_with_title_and_caption(sheet_title: str, caption: str) -> bytes:
+    """Like _make_pdf_with_title, but also prints a second, separate caption elsewhere on the
+    page -- mimicking a real sheet whose formal title describes one detail on it (e.g. "WOODEN
+    JOINERY DETAIL") while a different view is actually labelled directly on the drawing (e.g.
+    "FRONT ELEVATION" printed under it, as a real submitted drawing does)."""
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), f"TITLE:- {sheet_title}\nDATE:- 2026-01-01")
+    page.insert_text((72, 700), caption)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_cases_assemble_uses_a_page_caption_when_the_formal_title_does_not_match():
+    """The exact real-world case that motivated this: a sheet's formal TITLE:- field describes
+    one detail on it and doesn't match any known sheet type, but the sheet also prints a
+    separate view caption elsewhere on the page that does. That caption should be used instead
+    of rejecting the sheet -- searching for it is not guessing past what the file says, it's
+    reading more of what the file says."""
+    pdf_bytes = _make_pdf_with_title_and_caption("WOODEN JOINERY DETAIL", "FRONT ELEVATION")
+    resp = client.post(
+        "/cases/assemble",
+        files={"files": ("ele-01.pdf", pdf_bytes, "application/pdf")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["resolved_roles"] == {"ele-01.pdf": "elevation_front"}
+    assert body["unresolved"] == []
+
+
+def test_cases_assemble_formal_title_still_wins_when_it_matches():
+    """A page caption is only a fallback -- when the formal title DOES match, it must still be
+    used directly rather than searching the rest of the page (which could contain unrelated
+    keyword collisions in notes/boilerplate text)."""
+    pdf_bytes = _make_pdf_with_title_and_caption("GROUND FLOOR PLAN", "SEE ELEVATION A FOR HEIGHT")
+    resp = client.post(
+        "/cases/assemble",
+        files={"files": ("gf.pdf", pdf_bytes, "application/pdf")},
+        data={"authority": "GMADA"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["resolved_roles"] == {"gf.pdf": "ground"}
+
+
 def test_cases_assemble_single_unclassifiable_file_falls_back_to_combined():
     """A lone DXF whose filename gives no role hint (no title-block reader for DXF) and which
     has no named layout tabs to fall back on either must NOT be rejected outright -- it's the

@@ -48,7 +48,10 @@ class RoleGuess(NamedTuple):
     role: str | None
     """None if unclassified."""
     source: str
-    """"title_block" (read from the file itself) or "filename" (DXF fallback, lower trust)."""
+    """"title_block" (the formal TITLE:- field), "page_text" (a corroborating caption found
+    elsewhere on the page when the title block didn't match or wasn't present), "layout_name"
+    (a DXF/DWG's own paperspace layout tab name), or "filename" (DXF/DWG fallback, lowest
+    trust)."""
     detail: str
     """Human-readable reason, always present -- shown to the user either way."""
 
@@ -78,16 +81,32 @@ def guess_role(file_path: Path, original_filename: str) -> RoleGuess:
             role = _match_keywords(sheet_title)
             if role:
                 return RoleGuess(role, "title_block", f"title block reads {sheet_title!r}")
+
+        # The formal TITLE:- field either doesn't exist or doesn't match a known sheet type --
+        # a real sheet can still carry a second, separate caption printed directly on the
+        # drawing itself (e.g. a sheet formally titled "WOODEN JOINERY DETAIL" in its title
+        # block, with "FRONT ELEVATION" printed as a view label under the drawing it actually
+        # shows). Search the whole page's text for a match before rejecting the sheet outright
+        # -- a corroborating caption anywhere on the page is a real signal, not a guess past
+        # what the file says.
+        role = _match_keywords(text)
+        if role:
+            if sheet_title:
+                return RoleGuess(
+                    role, "page_text",
+                    f"title block reads {sheet_title!r} (no keyword match there), but this "
+                    f"sheet's own page text also carries a caption matching '{role}' -- used "
+                    "that instead of rejecting the sheet.",
+                )
+            return RoleGuess(role, "page_text", "matched from page text (no formal title block field found)")
+
+        if sheet_title:
             return RoleGuess(
                 None, "title_block",
                 f"title block reads {sheet_title!r}, which doesn't match a known sheet type "
-                "(floor plan / elevation / site / zoning / section)",
+                "(floor plan / elevation / site / zoning / section), and no other caption on "
+                "the page matched one either",
             )
-        # No TITLE:- field parsed -- last resort, try the whole page text (some sheets put the
-        # sheet description elsewhere, e.g. as a heading rather than in a formal title block).
-        role = _match_keywords(text[:2000])
-        if role:
-            return RoleGuess(role, "title_block", "matched from page text (no formal title block field found)")
         return RoleGuess(None, "title_block", "no title block or recognizable sheet heading found in this PDF")
 
     if suffix == ".dxf":

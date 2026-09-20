@@ -1399,3 +1399,56 @@ fire for >1 file. Full suite: 141/141.
 above. Once a real `bungalw.dwg`-like file is available, confirm its actual layout tab names
 match (or extend) the keyword table, and that layout entities converted by the real ODA File
 Converter carry through with the same structure as `ezdxf.new()`'s in-memory layouts do.
+
+## PDF role inference: a page caption beats a mismatched formal title (2026-09-20)
+
+User showed a real sheet (front elevation of a residence, "Wooden Joinery Detail" drawing
+number ELE-01): its formal title block reads `TITLE:- WOODEN JOINERY DETAIL` (the sheet's real
+subject -- a joinery detail is drawn on it), but the sheet ALSO prints "FRONT ELEVATION" as a
+separate caption at the bottom-left, under the elevation view it also shows. `role_inference.
+guess_role()` only ever looked at the formal `TITLE:-` field for a PDF with one present, so this
+sheet was rejected as unclassifiable even though it plainly says what it is, just not in the one
+field the code trusted. User: "search for all appropriate titles and even if one corroborates
+with what you need use that drawing instead of rejecting it."
+
+This is not a hypothetical -- **it's exactly `packages/cases/real/h02/elevation_front.pdf`**,
+already in this project's own real case set. `tests/test_parser.py::
+test_sheet_title_role_mismatch_detected_on_h02_elevation_front` already documented the title
+mismatch; the sibling assemble-level test asserted the sheet got REJECTED for it and its real,
+correct 39' (11.887m) overall-height dimension (confirmed by both front and rear elevations
+agreeing) was silently discarded as a result. This was a real, present bug this whole session,
+just never surfaced until the user pointed at the actual sheet.
+
+**Fix, two call sites (the check has to change in both places it's made, or one silently undoes
+the other):**
+
+1. `packages/api/role_inference.py::guess_role` (first classification): if the formal title
+   doesn't exist or doesn't match a known sheet type, search the WHOLE page's text (previously
+   only a `text[:2000]` slice was tried, and only when no title existed at all) for a
+   corroborating keyword before giving up. New `RoleGuess.source == "page_text"` distinguishes
+   this from a direct formal-title match, and the `detail` message says explicitly which field
+   won when both were checked.
+2. `packages/parser/pdf_ingest.py::page_text_matches_role` (new) + `semantics.py`'s elevation
+   cross-check (re-verifies a case's *declared* role against the sheet's own content before
+   trusting it for height/storey extraction): when `sheet_title_matches_role` on the formal
+   title alone comes back False, now also tries `page_text_matches_role` before flagging a
+   role-mismatch ambiguity. Without this second fix, `guess_role` would correctly classify the
+   sheet as `elevation_front` on first upload, and `assemble_case` would then immediately
+   re-reject that same correct classification for looking only at the title block a second time
+   -- the two checks have to agree.
+
+**Priority preserved**: a matching formal title still wins outright without ever scanning the
+rest of the page (`test_cases_assemble_formal_title_still_wins_when_it_matches`) -- the page-text
+search is only a fallback, so an incidental keyword collision in a plan sheet's notes/boilerplate
+(e.g. "see elevation A for height") can't override a title that already correctly identified the
+sheet.
+
+**New/updated tests**: `tests/test_api.py`'s
+`test_cases_assemble_uses_a_page_caption_when_the_formal_title_does_not_match` (the ELE-01
+scenario end-to-end) and `test_cases_assemble_formal_title_still_wins_when_it_matches` (fallback
+priority). `tests/test_parser.py`'s
+`test_assemble_case_h02_flags_elevation_role_mismatch_in_assumptions` (asserted the now-fixed
+wrong rejection) was replaced with
+`test_assemble_case_h02_confirms_elevation_role_via_page_caption_despite_title_mismatch`, which
+runs against the REAL h02 sheets and asserts the real, previously-discarded 11.887m height is now
+recovered. Full suite: 143/143.

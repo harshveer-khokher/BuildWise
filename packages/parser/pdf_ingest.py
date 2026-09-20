@@ -455,6 +455,29 @@ def sheet_title_matches_role(sheet_title: str | None, expected_keywords: tuple[s
     return any(k in lowered for k in expected_keywords)
 
 
+def page_text_matches_role(path: str | Path, expected_keywords: tuple[str, ...]) -> bool:
+    """True if ANY of `expected_keywords` appears anywhere in this sheet's own page text, not
+    just its formal TITLE:- field.
+
+    A real sheet can carry a formal title that describes one detail on it (e.g. "WOODEN JOINERY
+    DETAIL") while also printing a separate view caption elsewhere on the page (e.g. "FRONT
+    ELEVATION" as a label under the drawing it actually shows) -- role_inference.guess_role()
+    already searches the whole page for exactly this reason (packages/api/role_inference.py).
+    This is the semantics.py-side counterpart: used as a second attempt when
+    sheet_title_matches_role() on the formal title alone comes back False, so a sheet that
+    role_inference correctly classified via its page text isn't then rejected again here by a
+    check that only ever looked at the title block.
+    """
+    try:
+        doc = fitz.open(str(path))
+        text = doc[0].get_text()
+        doc.close()
+    except Exception:
+        return False
+    lowered = text.lower()
+    return any(k in lowered for k in expected_keywords)
+
+
 def estimate_storey_count_from_elevation(path: str | Path) -> tuple[int | None, str]:
     """Heuristic-only storey count from an elevation sheet, for cross-checking against the
     number of plan sheets (CLAUDE.md §10.1). This is NOT a substitute for a section sheet and
